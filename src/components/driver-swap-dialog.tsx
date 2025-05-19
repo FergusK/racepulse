@@ -79,9 +79,9 @@ export function DriverSwapDialog({
             Select the next driver, choose to refuel, and optionally adjust the next stint's planned duration.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-6 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="nextDriver" className="text-right col-span-1 text-muted-foreground">
+        <div className="space-y-6 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="nextDriver" className="text-muted-foreground">
               Next Driver
             </Label>
             <Select
@@ -89,7 +89,7 @@ export function DriverSwapDialog({
               onValueChange={setSelectedDriverId}
               disabled={displayDrivers.length === 0}
             >
-              <SelectTrigger id="nextDriver" className="col-span-3">
+              <SelectTrigger id="nextDriver">
                 <SelectValue placeholder="Select next driver" />
               </SelectTrigger>
               <SelectContent>
@@ -101,13 +101,11 @@ export function DriverSwapDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label 
-              htmlFor="nextStintDuration" 
-              className="text-right col-span-2 text-muted-foreground flex items-center justify-end pr-1"
-            >
-              <TimerIcon className="h-4 w-4 mr-1 inline-block flex-shrink-0" />
-              <span className="whitespace-nowrap">Next Duration</span>
+
+          <div className="grid gap-2">
+            <Label htmlFor="nextStintDuration" className="text-muted-foreground flex items-center">
+              <TimerIcon className="h-4 w-4 mr-2" />
+              Next Stint Planned Duration (mins)
             </Label>
             <Input
               id="nextStintDuration"
@@ -115,11 +113,11 @@ export function DriverSwapDialog({
               min="1"
               value={nextStintDuration}
               onChange={(e) => setNextStintDuration(e.target.value)}
-              placeholder={`Default (${config.fuelDurationMinutes} min)`}
-              className="col-span-2"
+              placeholder={`Default (${nextStintOriginalPlannedDurationMinutes || config.fuelDurationMinutes} min)`}
             />
           </div>
-          <div className="flex items-center space-x-3 justify-center col-span-4">
+
+          <div className="flex items-center space-x-3 justify-center pt-2">
             <Checkbox
               id="refuel"
               checked={refuel}
