@@ -8,7 +8,7 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { RACE_CONFIG_LOCAL_STORAGE_KEY, LOW_FUEL_THRESHOLD_MINUTES } from '@/lib/config';
 import { TimerDisplay } from '@/components/timer-display';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription as UICardDescription } from '@/components/ui/card'; // Renamed CardDescription to avoid conflict
+import { Card, CardContent, CardHeader, CardTitle, CardDescription as UICardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DriverSwapDialog } from '@/components/driver-swap-dialog';
 import { Progress } from "@/components/ui/progress";
@@ -149,13 +149,13 @@ export function RaceInterface() {
 
 
   useEffect(() => {
-    const officialStartTimestamp = state.config?.raceOfficialStartTime ? Date.parse(state.config.raceOfficialStartTime) : null;
+    const officialStartTimestampFromConfig = state.config?.raceOfficialStartTime ? Date.parse(state.config.raceOfficialStartTime) : null;
     let autoStartTimerId: NodeJS.Timeout | null = null;
 
-    if (officialStartTimestamp && officialStartTimestamp > Date.now() && !state.isRaceActive && !state.raceCompleted) {
-      const timeToAutoStart = officialStartTimestamp - Date.now();
+    if (officialStartTimestampFromConfig && officialStartTimestampFromConfig > Date.now() && !state.isRaceActive && !state.raceCompleted) {
+      const timeToAutoStart = officialStartTimestampFromConfig - Date.now();
       autoStartTimerId = setTimeout(() => {
-        if (Date.now() >= officialStartTimestamp && !state.isRaceActive && !state.raceCompleted && state.config?.raceOfficialStartTime === raceConfigFromStorage?.raceOfficialStartTime) {
+        if (Date.now() >= officialStartTimestampFromConfig && !state.isRaceActive && !state.raceCompleted && state.config?.raceOfficialStartTime === raceConfigFromStorage?.raceOfficialStartTime) {
            dispatch({ type: 'START_RACE' }); 
         }
       }, timeToAutoStart);
@@ -200,7 +200,8 @@ export function RaceInterface() {
   const { config } = state;
   const currentTimeForCalcs = state.isRacePaused && state.pauseTime ? state.pauseTime : now;
   
-  const officialStartTimestamp = config.raceOfficialStartTime ? Date.parse(config.raceOfficialStartTime) : null;
+  const hasOfficialStartTime = !!(config.raceOfficialStartTime && !isNaN(Date.parse(config.raceOfficialStartTime)));
+  const officialStartTimestamp = hasOfficialStartTime ? Date.parse(config.raceOfficialStartTime!) : null;
   const timeToRaceStartMs = officialStartTimestamp && officialStartTimestamp > now ? officialStartTimestamp - now : 0;
 
 
@@ -232,6 +233,7 @@ export function RaceInterface() {
   const nextPlannedDriver = nextPlannedDriverId ? config.drivers.find(d => d.id === nextPlannedDriverId) : null;
 
   const raceNotYetStartedAndHasFutureStartTime = timeToRaceStartMs > 0 && !state.isRaceActive && !state.raceCompleted;
+  const canDisplayUpcomingStintsList = config.stintSequence.length > 0 && !state.raceCompleted;
 
 
   return (
@@ -315,67 +317,73 @@ export function RaceInterface() {
           </CardContent>
         </Card>
 
-        {officialStartTimestamp && !state.raceCompleted && (state.isRaceActive || raceNotYetStartedAndHasFutureStartTime) && (
+        {canDisplayUpcomingStintsList && (
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-primary flex items-center">
                 <Users className="mr-2 h-5 w-5" /> Upcoming Stints
               </CardTitle>
-               <UICardDescription>Planned times based on official start and stint durations.</UICardDescription>
+               <UICardDescription>
+                 {hasOfficialStartTime
+                    ? "Planned times based on official start and stint durations."
+                    : "Sequence of drivers and their planned stint durations."}
+                </UICardDescription>
             </CardHeader>
             <CardContent>
-              {config.stintSequence.length > (state.isRaceActive ? state.currentStintIndex + 1 : 0) ? (
-                <ul className="space-y-3 max-h-[calc(100vh-20rem)] overflow-y-auto">
-                  {(() => {
-                    let cumulativeTimeOffsetMs = 0;
-                    const startIndexForDisplay = state.isRaceActive ? state.currentStintIndex + 1 : 0;
-                    let displayedCount = 0;
+            {(() => {
+                const startIndexForDisplay = state.isRaceActive ? state.currentStintIndex + 1 : 0;
+                const stintsToRender = [];
+                let currentCumulativeTime = officialStartTimestamp; // This can be null
 
-                    return config.stintSequence.map((stintEntry, overallStintIndex) => {
-                      const stintDurationMinutes = stintEntry.plannedDurationMinutes || config.fuelDurationMinutes;
-                      const driver = config.drivers.find(d => d.id === stintEntry.driverId);
-                      
-                      let plannedStartTimeMs = officialStartTimestamp;
-                      if (overallStintIndex > 0) {
-                        let prevStintTimeOffset = 0;
-                        for (let i = 0; i < overallStintIndex; i++) {
-                           const prevStint = config.stintSequence[i];
-                           prevStintTimeOffset += (prevStint.plannedDurationMinutes || config.fuelDurationMinutes) * 60 * 1000;
-                        }
-                        plannedStartTimeMs += prevStintTimeOffset;
-                      }
-                      
-                      if (overallStintIndex < startIndexForDisplay) {
-                         return null; // Skip past stints if race is active
-                      }
-                      
-                      // Hide if too far in the past for active race (e.g. >5 mins ago), unless it's the very next one
-                      if (state.isRaceActive && plannedStartTimeMs < now - 5 * 60 * 1000 && overallStintIndex > state.currentStintIndex +1) {
-                        return null;
-                      }
+                for (let i = 0; i < config.stintSequence.length; i++) {
+                  const stintEntry = config.stintSequence[i];
+                  const stintDurationMinutes = stintEntry.plannedDurationMinutes || config.fuelDurationMinutes;
+                  const driver = config.drivers.find(d => d.id === stintEntry.driverId);
 
-                      const isCurrentPreRaceStint = !state.isRaceActive && overallStintIndex === 0;
-                      displayedCount++;
+                  let thisStintPlannedStartTimeMs: number | null = null;
+                  if (currentCumulativeTime !== null) {
+                    thisStintPlannedStartTimeMs = currentCumulativeTime;
+                    currentCumulativeTime += stintDurationMinutes * 60 * 1000;
+                  }
+                  
+                  if (i < startIndexForDisplay) {
+                    continue; // Skip past stints or current if race active
+                  }
 
-                      return (
-                        <li key={`${stintEntry.driverId}-${overallStintIndex}`} className={`p-3 rounded-md border flex justify-between items-center ${isCurrentPreRaceStint ? 'bg-primary/10 border-primary' : 'bg-muted/30'}`}>
-                          <div>
-                            <p className={`font-medium ${isCurrentPreRaceStint ? 'text-primary' : ''}`}>{driver?.name || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Stint #{overallStintIndex + 1} ({stintDurationMinutes} min)</p>
-                          </div>
-                          <p className="text-sm font-semibold text-right">
-                            {new Date(plannedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            {new Date(plannedStartTimeMs).toLocaleDateString() !== new Date(now).toLocaleDateString() && 
-                             ` (${new Date(plannedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
-                          </p>
-                        </li>
-                      );
-                    }).filter(Boolean); // Filter out nulls before checking length
-                  })().length === 0 && <p className="text-muted-foreground text-sm">All planned stints are in the past or not applicable.</p>}
-                </ul>
-              ) : (
-                 <p className="text-muted-foreground text-sm">{state.isRaceActive ? "No more planned stints in sequence." : "Setup stint sequence to see plans."}</p>
-              )}
+                  // More refined filtering for past stints when official time is set
+                  if (hasOfficialStartTime && state.isRaceActive && thisStintPlannedStartTimeMs && thisStintPlannedStartTimeMs < now - 5 * 60 * 1000 && i > state.currentStintIndex + 1 ) {
+                     // Hide if it started more than 5 mins ago, AND it's not the *immediate* next stint
+                     continue;
+                  }
+                  
+                  const isCurrentPreRaceHighlight = !state.isRaceActive && hasOfficialStartTime && i === 0 && thisStintPlannedStartTimeMs && thisStintPlannedStartTimeMs > now;
+
+                  stintsToRender.push(
+                    <li key={`${stintEntry.driverId}-${i}`} className={`p-3 rounded-md border flex justify-between items-center ${isCurrentPreRaceHighlight ? 'bg-primary/10 border-primary' : 'bg-muted/30'}`}>
+                      <div>
+                        <p className={`font-medium ${isCurrentPreRaceHighlight ? 'text-primary' : ''}`}>{driver?.name || "N/A"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Stint #{i + 1} ({stintDurationMinutes} min)
+                        </p>
+                      </div>
+                      {thisStintPlannedStartTimeMs !== null && (
+                        <p className="text-sm font-semibold text-right">
+                          {new Date(thisStintPlannedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(thisStintPlannedStartTimeMs).toLocaleDateString() !== new Date(now).toLocaleDateString() && 
+                           ` (${new Date(thisStintPlannedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
+                        </p>
+                      )}
+                    </li>
+                  );
+                }
+
+                if (stintsToRender.length === 0) {
+                  return <p className="text-muted-foreground text-sm">
+                    {config.stintSequence.length === 0 ? "No stints planned in sequence." : (state.isRaceActive ? "All planned stints are in the past or sequence complete." : "No upcoming stints to display at this time.")}
+                  </p>;
+                }
+                return <ul className="space-y-3 max-h-[calc(100vh-20rem)] overflow-y-auto">{stintsToRender}</ul>;
+              })()}
             </CardContent>
           </Card>
         )}
