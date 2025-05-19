@@ -12,16 +12,22 @@ export interface StintEntry {
   plannedDurationMinutes?: number;
 }
 
-// Add raceOfficialStartTime to RaceConfiguration
-export interface RaceConfigurationNoStartTime extends Omit<z.infer<typeof raceConfigSchema>, 'stintSequence'> {
+export interface RaceConfiguration extends Omit<z.infer<typeof raceConfigSchema>, 'stintSequence' | 'raceOfficialStartTime'> {
   stintSequence: StintEntry[];
-}
-
-export interface RaceConfiguration extends RaceConfigurationNoStartTime {
   raceOfficialStartTime?: string; // ISO string from datetime-local, optional
 }
 
 export type DriverSchema = z.infer<typeof driverSchema>;
+
+export interface CompletedStintEntry {
+  driverId: string;
+  driverName: string;
+  stintNumber: number; // 1-based index of the stint in the original sequence
+  startTime: number; // timestamp
+  endTime: number; // timestamp
+  actualDurationMs: number;
+  plannedDurationMinutes?: number; // Original planned duration for this stint
+}
 
 export interface CurrentRaceState {
   config: RaceConfiguration | null;
@@ -41,13 +47,29 @@ export interface CurrentRaceState {
 
   raceFinishTime: number | null; // timestamp when race should end based on start and duration
   raceCompleted: boolean;
+  completedStints: CompletedStintEntry[];
 }
 
 export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
   drivers: [{ id: 'driver1', name: 'Driver 1' }],
-  stintSequence: [{ driverId: 'driver1' }], // plannedDurationMinutes is implicitly undefined
+  stintSequence: [{ driverId: 'driver1' }], 
   fuelDurationMinutes: 60,
   raceDurationMinutes: 120,
   raceOfficialStartTime: undefined,
 };
 
+export const initialRaceState: Omit<CurrentRaceState, 'config'> = {
+  isRaceActive: false,
+  isRacePaused: false,
+  raceStartTime: null,
+  pauseTime: null,
+  accumulatedPauseDuration: 0,
+  currentStintIndex: 0,
+  currentDriverId: null,
+  stintStartTime: null,
+  fuelTankStartTime: null,
+  fuelAlertActive: false,
+  raceFinishTime: null,
+  raceCompleted: false,
+  completedStints: [],
+};

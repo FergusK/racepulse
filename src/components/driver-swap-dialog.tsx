@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -10,19 +11,21 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Driver, RaceConfiguration } from "@/lib/types";
 import { useState, useEffect } from "react";
-import { Users, RotateCcw } from "lucide-react";
+import { Users, RotateCcw, TimerIcon } from "lucide-react";
 
 interface DriverSwapDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (nextDriverId: string, refuel: boolean) => void;
+  onConfirm: (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number) => void;
   currentDriverId: string | null;
   config: RaceConfiguration;
   nextPlannedDriverId?: string | null;
+  nextStintOriginalPlannedDurationMinutes?: number;
 }
 
 export function DriverSwapDialog({
@@ -32,34 +35,37 @@ export function DriverSwapDialog({
   currentDriverId,
   config,
   nextPlannedDriverId,
+  nextStintOriginalPlannedDurationMinutes,
 }: DriverSwapDialogProps) {
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [refuel, setRefuel] = useState<boolean>(true);
+  const [nextStintDuration, setNextStintDuration] = useState<string>("");
 
   useEffect(() => {
     if (isOpen) {
-      // Try to pre-select the next planned driver, or the first available different driver
       const availableDrivers = config.drivers.filter(d => d.id !== currentDriverId);
       if (nextPlannedDriverId && config.drivers.some(d => d.id === nextPlannedDriverId) && nextPlannedDriverId !== currentDriverId) {
         setSelectedDriverId(nextPlannedDriverId);
       } else if (availableDrivers.length > 0) {
         setSelectedDriverId(availableDrivers[0].id);
       } else if (config.drivers.length > 0) {
-        setSelectedDriverId(config.drivers[0].id) // Fallback if only one driver
+        setSelectedDriverId(config.drivers[0].id)
       }
-      setRefuel(true); // Default to refuel
+      setRefuel(true);
+      setNextStintDuration(nextStintOriginalPlannedDurationMinutes?.toString() || "");
     }
-  }, [isOpen, config.drivers, currentDriverId, nextPlannedDriverId]);
+  }, [isOpen, config.drivers, currentDriverId, nextPlannedDriverId, nextStintOriginalPlannedDurationMinutes]);
 
   const handleConfirm = () => {
     if (selectedDriverId) {
-      onConfirm(selectedDriverId, refuel);
+      const duration = nextStintDuration.trim() === "" ? undefined : parseInt(nextStintDuration, 10);
+      onConfirm(selectedDriverId, refuel, isNaN(duration!) ? undefined : duration);
       onClose();
     }
   };
 
   const availableDrivers = config.drivers.filter(d => d.id !== currentDriverId);
-  const displayDrivers = availableDrivers.length > 0 ? availableDrivers : config.drivers; // Show all if current is the only one or not set
+  const displayDrivers = availableDrivers.length > 0 ? availableDrivers : config.drivers; 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -70,7 +76,7 @@ export function DriverSwapDialog({
             Swap Driver
           </DialogTitle>
           <DialogDescription>
-            Select the next driver and choose to refuel.
+            Select the next driver, choose to refuel, and optionally adjust the next stint's planned duration.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 py-4">
@@ -94,6 +100,20 @@ export function DriverSwapDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="nextStintDuration" className="text-right col-span-1 text-muted-foreground flex items-center">
+              <TimerIcon className="h-4 w-4 mr-1 inline-block" /> Next Duration
+            </Label>
+            <Input
+              id="nextStintDuration"
+              type="number"
+              min="1"
+              value={nextStintDuration}
+              onChange={(e) => setNextStintDuration(e.target.value)}
+              placeholder={`Default (${config.fuelDurationMinutes} min)`}
+              className="col-span-3"
+            />
           </div>
           <div className="flex items-center space-x-3 justify-center col-span-4">
             <Checkbox
