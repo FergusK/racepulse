@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { RaceConfiguration, CurrentRaceState, Driver } from '@/lib/types';
@@ -11,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DriverSwapDialog } from '@/components/driver-swap-dialog';
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, RotateCcw, Users, Fuel, FlagCheckered, AlertTriangle, SkipForward } from 'lucide-react';
+import { Play, Pause, RotateCcw, Users, Fuel, Flag, AlertTriangle, SkipForward } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 type RaceAction =
@@ -208,7 +209,7 @@ export function RaceInterface() {
       <Card className="mb-8 shadow-xl border-primary/20">
         <CardHeader className="pb-4">
           <CardTitle className="text-3xl font-bold text-primary flex items-center">
-            <FlagCheckered className="mr-3 h-8 w-8" /> Race Monitor
+            <Flag className="mr-3 h-8 w-8" /> Race Monitor
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -235,7 +236,7 @@ export function RaceInterface() {
       
       {state.raceCompleted && (
          <Alert variant="default" className="mb-6 border-primary bg-primary/10 text-primary-foreground">
-          <FlagCheckered className="h-5 w-5 text-primary" />
+          <Flag className="h-5 w-5 text-primary" />
           <AlertTitle className="text-primary font-semibold">Race Finished!</AlertTitle>
           <AlertDescription>
             The race has concluded. Total time: {TimerDisplay({timeMs: config.raceDurationMinutes * 60 * 1000, label:''})['props']['timeMs'] && formatTime(config.raceDurationMinutes * 60 * 1000)}.
@@ -320,3 +321,6 @@ function formatTime(ms: number): string {
   const seconds = totalSeconds % 60;
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
+
+
+    
