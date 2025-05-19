@@ -50,8 +50,8 @@ export function RaceSetupForm() {
 
 
   const onSubmit = (data: RaceConfiguration) => {
-    // Explicitly set raceOfficialStartTime to undefined as the input is removed
-    data.raceOfficialStartTime = undefined;
+    // raceOfficialStartTime will be preserved from loaded config if it existed,
+    // as there's no input field for it anymore.
     
     // Ensure plannedDurationMinutes is number or undefined
     data.stintSequence = data.stintSequence.map(stint => ({
