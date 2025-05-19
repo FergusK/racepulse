@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { RaceConfiguration, DriverSchema } from '@/lib/types';
+import type { RaceConfiguration, StintEntry } from '@/lib/types';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { raceConfigSchema } from '@/lib/validators';
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, Clock } from 'lucide-react';
+import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, Clock, TimerIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { RACE_CONFIG_LOCAL_STORAGE_KEY } from '@/lib/config';
@@ -50,10 +50,16 @@ export function RaceSetupForm() {
 
 
   const onSubmit = (data: RaceConfiguration) => {
-    // Ensure empty string for raceOfficialStartTime is converted to undefined
     if (data.raceOfficialStartTime === "") {
       data.raceOfficialStartTime = undefined;
     }
+    // Ensure plannedDurationMinutes is number or undefined
+    data.stintSequence = data.stintSequence.map(stint => ({
+      ...stint,
+      plannedDurationMinutes: stint.plannedDurationMinutes === null || stint.plannedDurationMinutes === undefined || isNaN(Number(stint.plannedDurationMinutes))
+        ? undefined
+        : Number(stint.plannedDurationMinutes)
+    }));
     setSavedConfig(data);
     toast({
       title: "Configuration Saved",
@@ -70,7 +76,7 @@ export function RaceSetupForm() {
   const handleAddStint = () => {
     const availableDrivers = form.watch('drivers');
     if (availableDrivers.length > 0) {
-      appendStint(availableDrivers[0].id); // Add the first driver by default
+      appendStint({ driverId: availableDrivers[0].id, plannedDurationMinutes: undefined });
     } else {
       toast({
         title: "Cannot Add Stint",
@@ -128,31 +134,46 @@ export function RaceSetupForm() {
               <h3 className="text-xl font-semibold mb-3 text-primary">Stint Sequence</h3>
               <div className="space-y-3">
                 {stintSequence.map((field, index) => (
-                  <div key={field.id} className="flex items-center space-x-2 p-3 bg-muted/30 rounded-md border">
-                    <Label className="w-10 text-sm text-muted-foreground">#{index + 1}</Label>
-                    <Controller
-                      control={form.control}
-                      name={`stintSequence.${index}`}
-                      render={({ field: controllerField }) => (
-                        <Select
-                          onValueChange={controllerField.onChange}
-                          value={controllerField.value}
-                          disabled={watchDrivers.length === 0}
-                        >
-                          <SelectTrigger className="flex-grow">
-                            <SelectValue placeholder="Select Driver" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {watchDrivers.map((driver) => (
-                              <SelectItem key={driver.id} value={driver.id}>
-                                {driver.name || `Unnamed Driver (ID: ${driver.id.substring(0,6)}... )`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                  <div key={field.id} className="flex items-start space-x-2 p-3 bg-muted/30 rounded-md border">
+                    <Label className="w-10 text-sm text-muted-foreground pt-2">#{index + 1}</Label>
+                    <div className="flex-grow space-y-2">
+                      <Controller
+                        control={form.control}
+                        name={`stintSequence.${index}.driverId`}
+                        render={({ field: controllerField }) => (
+                          <Select
+                            onValueChange={controllerField.onChange}
+                            value={controllerField.value}
+                            disabled={watchDrivers.length === 0}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select Driver" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {watchDrivers.map((driver) => (
+                                <SelectItem key={driver.id} value={driver.id}>
+                                  {driver.name || `Unnamed Driver (ID: ${driver.id.substring(0,6)}... )`}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      <div className="flex items-center space-x-2">
+                        <TimerIcon className="h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type="number"
+                          {...form.register(`stintSequence.${index}.plannedDurationMinutes`)}
+                          placeholder="Opt. Duration (mins)"
+                          className="h-9 text-sm"
+                          min="1"
+                        />
+                      </div>
+                      {form.formState.errors.stintSequence?.[index]?.plannedDurationMinutes && (
+                        <p className="text-sm text-destructive">{form.formState.errors.stintSequence[index]?.plannedDurationMinutes?.message}</p>
                       )}
-                    />
-                    <div className="flex flex-col">
+                    </div>
+                    <div className="flex flex-col pt-1">
                       <Button type="button" variant="ghost" size="icon" onClick={() => moveStint(index, Math.max(0, index - 1))} disabled={index === 0} aria-label="Move Stint Up">
                         <ArrowUp className="h-4 w-4" />
                       </Button>
@@ -160,12 +181,12 @@ export function RaceSetupForm() {
                         <ArrowDown className="h-4 w-4" />
                       </Button>
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeStint(index)} aria-label="Remove Stint">
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeStint(index)} aria-label="Remove Stint" className="pt-1">
                       <Trash2 className="h-5 w-5 text-destructive" />
                     </Button>
                   </div>
                 ))}
-                {form.formState.errors.stintSequence && <p className="text-sm text-destructive">{form.formState.errors.stintSequence.message || form.formState.errors.stintSequence.root?.message}</p>}
+                {form.formState.errors.stintSequence && typeof form.formState.errors.stintSequence === 'object' && !Array.isArray(form.formState.errors.stintSequence) && <p className="text-sm text-destructive">{form.formState.errors.stintSequence.message || form.formState.errors.stintSequence.root?.message}</p>}
                  {form.formState.errors.root && <p className="text-sm text-destructive">{form.formState.errors.root.message}</p>}
               </div>
               <Button type="button" variant="outline" onClick={handleAddStint} className="mt-3" disabled={watchDrivers.length === 0}>
@@ -178,7 +199,7 @@ export function RaceSetupForm() {
             {/* Race Parameters */}
             <section className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
               <div>
-                <Label htmlFor="fuelDurationMinutes" className="text-base font-medium">Fuel Duration (minutes per tank)</Label>
+                <Label htmlFor="fuelDurationMinutes" className="text-base font-medium">Default Fuel Duration (minutes per tank)</Label>
                 <Input
                   id="fuelDurationMinutes"
                   type="number"
@@ -199,7 +220,7 @@ export function RaceSetupForm() {
                 />
                 {form.formState.errors.raceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceDurationMinutes.message}</p>}
               </div>
-              <div className="md:col-span-2"> {/* Race Start Time input */}
+              <div className="md:col-span-2">
                 <Label htmlFor="raceOfficialStartTime" className="text-base font-medium flex items-center">
                   <Clock className="mr-2 h-5 w-5 text-muted-foreground" />
                   Race Start Time (Optional)
@@ -225,3 +246,4 @@ export function RaceSetupForm() {
     </div>
   );
 }
+

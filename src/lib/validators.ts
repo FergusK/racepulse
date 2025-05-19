@@ -1,3 +1,4 @@
+
 import { z } from 'zod';
 
 export const driverSchema = z.object({
@@ -5,9 +6,17 @@ export const driverSchema = z.object({
   name: z.string().min(1, "Driver name cannot be empty.").max(50, "Driver name too long."),
 });
 
+export const stintEntrySchema = z.object({
+  driverId: z.string().min(1, "Driver ID in stint cannot be empty."),
+  plannedDurationMinutes: z.preprocess(
+    (val) => (val === "" || val == null ? undefined : parseFloat(String(val))),
+    z.number().positive("Planned duration must be positive if specified.").optional()
+  ),
+});
+
 export const raceConfigSchema = z.object({
   drivers: z.array(driverSchema).min(1, "At least one driver is required."),
-  stintSequence: z.array(z.string().min(1, "Driver ID in stint sequence cannot be empty."))
+  stintSequence: z.array(stintEntrySchema)
     .min(1, "At least one stint must be planned."),
   fuelDurationMinutes: z.number({invalid_type_error: "Must be a number"})
     .positive("Fuel duration must be a positive number.")
@@ -19,17 +28,15 @@ export const raceConfigSchema = z.object({
     .max(2880, "Race duration seems too long (max 48h)."), // Max 48 hours
   raceOfficialStartTime: z.string().refine((val) => {
     if (val === "" || val === undefined || val === null) return true; // Allow empty or undefined
-    // Check if the date string is valid
     const parsedDate = Date.parse(val);
     if (isNaN(parsedDate)) return false;
-    // Optional: Check if it's a reasonable date (e.g., not too far in past/future if needed)
-    // For now, just parsing is enough.
     return true;
   }, { message: "Invalid date and time format. Leave blank to start manually." }).optional(),
 }).refine(data => {
     const driverIds = new Set(data.drivers.map(d => d.id));
-    return data.stintSequence.every(driverId => driverIds.has(driverId));
+    return data.stintSequence.every(stint => driverIds.has(stint.driverId));
 }, {
     message: "All drivers in stint sequence must exist in the drivers list.",
     path: ["stintSequence"],
 });
+
