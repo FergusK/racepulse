@@ -102,8 +102,12 @@ export function DriverSwapDialog({
             </Select>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="nextStintDuration" className="text-right col-span-1 text-muted-foreground flex items-center">
-              <TimerIcon className="h-4 w-4 mr-1 inline-block" /> Next Duration
+            <Label 
+              htmlFor="nextStintDuration" 
+              className="text-right col-span-2 text-muted-foreground flex items-center justify-end pr-1"
+            >
+              <TimerIcon className="h-4 w-4 mr-1 inline-block flex-shrink-0" />
+              <span className="whitespace-nowrap">Next Duration</span>
             </Label>
             <Input
               id="nextStintDuration"
@@ -112,7 +116,7 @@ export function DriverSwapDialog({
               value={nextStintDuration}
               onChange={(e) => setNextStintDuration(e.target.value)}
               placeholder={`Default (${config.fuelDurationMinutes} min)`}
-              className="col-span-3"
+              className="col-span-2"
             />
           </div>
           <div className="flex items-center space-x-3 justify-center col-span-4">
