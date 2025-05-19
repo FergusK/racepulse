@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { DriverSwapDialog } from '@/components/driver-swap-dialog';
 import { EditStintDialog } from '@/components/edit-stint-dialog';
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, RotateCcw, Users, Fuel, Flag, AlertTriangle, TimerIcon, History, Clock, Pencil, PlusCircle } from 'lucide-react';
+import { Play, Pause, RotateCcw, Users, Fuel, Flag, AlertTriangle, TimerIcon, History, Clock, Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Table,
@@ -37,7 +37,8 @@ type RaceAction =
   | { type: 'TICK'; payload: { currentTime: number } }
   | { type: 'LOAD_CONFIG'; payload: RaceConfiguration }
   | { type: 'UPDATE_STINT_IN_SEQUENCE'; payload: { stintIndex: number; driverId: string; plannedDurationMinutes?: number } }
-  | { type: 'ADD_STINT_TO_SEQUENCE'; payload: { driverId: string; plannedDurationMinutes?: number } };
+  | { type: 'ADD_STINT_TO_SEQUENCE'; payload: { driverId: string; plannedDurationMinutes?: number } }
+  | { type: 'DELETE_STINT_FROM_SEQUENCE'; payload: { stintIndex: number } };
 
 
 function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceState {
@@ -176,6 +177,16 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       return { ...state, config: { ...state.config, stintSequence: [...state.config.stintSequence, newStint] } };
     }
 
+    case 'DELETE_STINT_FROM_SEQUENCE': {
+      if (!state.config) return state;
+      const { stintIndex } = action.payload;
+      const newStintSequence = [...state.config.stintSequence];
+      if (stintIndex >= 0 && stintIndex < newStintSequence.length) {
+        newStintSequence.splice(stintIndex, 1);
+      }
+      return { ...state, config: { ...state.config, stintSequence: newStintSequence } };
+    }
+
     default:
       return state;
   }
@@ -223,10 +234,9 @@ export function RaceInterface() {
 
     if (officialStartTimestampFromConfig && officialStartTimestampFromConfig > Date.now() && !state.isRaceActive && !state.raceCompleted && state.config) {
       const timeToAutoStart = officialStartTimestampFromConfig - Date.now();
-      const currentConfigStartTime = state.config.raceOfficialStartTime; // Capture at time of effect setup
+      const currentConfigStartTime = state.config.raceOfficialStartTime; 
 
       autoStartTimerId = setTimeout(() => {
-        // Re-check config inside timeout to ensure it hasn't changed due to other actions
         if (state.config?.raceOfficialStartTime === currentConfigStartTime &&
             Date.now() >= (officialStartTimestampFromConfig || 0) && 
             !state.isRaceActive && !state.raceCompleted) {
@@ -301,6 +311,12 @@ export function RaceInterface() {
     }
     setEditStintDialogOpen(false);
     setEditingStintInfo(null);
+  };
+
+  const handleDeleteStint = (stintIndexInSequence: number) => {
+    if (window.confirm("Are you sure you want to delete this stint from the sequence?")) {
+      dispatch({ type: 'DELETE_STINT_FROM_SEQUENCE', payload: { stintIndex: stintIndexInSequence } });
+    }
   };
 
 
@@ -492,44 +508,30 @@ export function RaceInterface() {
                       const currentStintData = state.config.stintSequence[state.currentStintIndex];
                       const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
                       nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs;
-                  } else if ((hasOfficialStartTime || state.config?.stintSequence.some(s => s.plannedDurationMinutes)) && state.config) { // Use official start or sum of durations if official not set but durations are
-                      nextStintBaseTimeMs = officialStartTimestamp || currentTimeForCalcs; // Fallback to current time if no official start for relative duration planning
-                      if (!hasOfficialStartTime) { // If using current time, adjust base to be "now" + sum of completed stints from sequence
+                  } else if ((hasOfficialStartTime || state.config?.stintSequence.some(s => s.plannedDurationMinutes)) && state.config) { 
+                      nextStintBaseTimeMs = officialStartTimestamp || currentTimeForCalcs; 
+                      if (!hasOfficialStartTime) { 
                           nextStintBaseTimeMs = currentTimeForCalcs;
-                          for (let k = 0; k < state.currentStintIndex + 1; k++) {
-                              if (state.completedStints[k]) { // If using actual completed stint data (not available pre-race like this)
-                                // This branch is more for post-race analysis if we didn't have live updates
-                                // For pre-race dynamic ETAs without official start, this 'else if' is tricky.
-                                // The original logic for pre-race assumed official start. Let's refine.
-                              } else if (k < state.config.stintSequence.length) {
-                                // If officialStartTime isn't set, then baseTime is relative
-                                // and we can only show durations, not specific ETAs.
-                                // For simplicity, if no official start, ETAs won't be shown, only durations.
-                                // The nextStintBaseTimeMs here becomes a flag for "can calculate ETA"
-                              }
-                          }
-                      } else { // Has official start time
+                      } else { 
                         for (let k = 0; k <= state.currentStintIndex; k++) { 
                             if (k < state.config.stintSequence.length) {
-                                // For pre-race, sum planned durations from official start
-                                if (k === 0 && k === state.currentStintIndex) { // Special case for first stint if race not started
+                                if (k === 0 && k === state.currentStintIndex) { 
                                      nextStintBaseTimeMs = officialStartTimestamp!;
                                      const firstStintDurationMs = (state.config.stintSequence[0]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                                     nextStintBaseTimeMs += firstStintDurationMs; // This is start time of 2nd stint
+                                     nextStintBaseTimeMs += firstStintDurationMs; 
                                 } else if (k < state.currentStintIndex) {
                                     const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
                                      if (k===0) nextStintBaseTimeMs = officialStartTimestamp! + stintDurationMs; else nextStintBaseTimeMs += stintDurationMs;
-                                } else if (k === state.currentStintIndex) { // current stint for ETA calculation
+                                } else if (k === state.currentStintIndex) { 
                                      const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
                                      if (k===0 && officialStartTimestamp) nextStintBaseTimeMs = officialStartTimestamp + stintDurationMs;
                                      else if (k>0) nextStintBaseTimeMs += stintDurationMs;
-                                     // This correctly sets nextStintBaseTimeMs to the END of the currentStintIndex (for pre-race)
                                 }
                             }
                         }
                       }
                   } else {
-                      nextStintBaseTimeMs = 0; // Cannot calculate ETAs
+                      nextStintBaseTimeMs = 0; 
                   }
 
                   let cumulativeDurationForUpcomingMs = 0;
@@ -543,7 +545,7 @@ export function RaceInterface() {
                         let thisStintExpectedStartTimeMs: number | null = null;
                         let isPotentiallyTooLate = false;
 
-                        if (nextStintBaseTimeMs !== 0) { // Indicates ETAs can be calculated
+                        if (nextStintBaseTimeMs !== 0) { 
                             thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
                             cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000;
 
@@ -574,15 +576,26 @@ export function RaceInterface() {
                               )}
                             </div>
                             {!state.raceCompleted && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenEditStintDialog(i, stintEntry.driverId, stintEntry.plannedDurationMinutes)}
-                                className="ml-2"
-                                aria-label="Edit Stint"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
+                              <div className="flex items-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenEditStintDialog(i, stintEntry.driverId, stintEntry.plannedDurationMinutes)}
+                                  className="ml-2"
+                                  aria-label="Edit Stint"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteStint(i)}
+                                  className="ml-1 text-destructive hover:text-destructive/80"
+                                  aria-label="Delete Stint"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
                             )}
                           </li>
                         );
