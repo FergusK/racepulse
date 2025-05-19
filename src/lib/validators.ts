@@ -17,6 +17,15 @@ export const raceConfigSchema = z.object({
     .positive("Race duration must be a positive number.")
     .min(1, "Race duration must be at least 1 minute.")
     .max(2880, "Race duration seems too long (max 48h)."), // Max 48 hours
+  raceOfficialStartTime: z.string().refine((val) => {
+    if (val === "" || val === undefined || val === null) return true; // Allow empty or undefined
+    // Check if the date string is valid
+    const parsedDate = Date.parse(val);
+    if (isNaN(parsedDate)) return false;
+    // Optional: Check if it's a reasonable date (e.g., not too far in past/future if needed)
+    // For now, just parsing is enough.
+    return true;
+  }, { message: "Invalid date and time format. Leave blank to start manually." }).optional(),
 }).refine(data => {
     const driverIds = new Set(data.drivers.map(d => d.id));
     return data.stintSequence.every(driverId => driverIds.has(driverId));

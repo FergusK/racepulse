@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { RaceConfiguration, DriverSchema } from '@/lib/types';
@@ -9,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play } from 'lucide-react';
+import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { RACE_CONFIG_LOCAL_STORAGE_KEY } from '@/lib/config';
@@ -49,6 +50,10 @@ export function RaceSetupForm() {
 
 
   const onSubmit = (data: RaceConfiguration) => {
+    // Ensure empty string for raceOfficialStartTime is converted to undefined
+    if (data.raceOfficialStartTime === "") {
+      data.raceOfficialStartTime = undefined;
+    }
     setSavedConfig(data);
     toast({
       title: "Configuration Saved",
@@ -171,7 +176,7 @@ export function RaceSetupForm() {
             <Separator />
 
             {/* Race Parameters */}
-            <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
               <div>
                 <Label htmlFor="fuelDurationMinutes" className="text-base font-medium">Fuel Duration (minutes per tank)</Label>
                 <Input
@@ -193,6 +198,20 @@ export function RaceSetupForm() {
                   className="mt-1"
                 />
                 {form.formState.errors.raceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceDurationMinutes.message}</p>}
+              </div>
+              <div className="md:col-span-2"> {/* Race Start Time input */}
+                <Label htmlFor="raceOfficialStartTime" className="text-base font-medium flex items-center">
+                  <Clock className="mr-2 h-5 w-5 text-muted-foreground" />
+                  Race Start Time (Optional)
+                </Label>
+                <Input
+                  id="raceOfficialStartTime"
+                  type="datetime-local"
+                  {...form.register('raceOfficialStartTime')}
+                  className="mt-1"
+                />
+                {form.formState.errors.raceOfficialStartTime && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceOfficialStartTime.message}</p>}
+                <p className="text-xs text-muted-foreground mt-1">Leave blank to start the race manually by clicking "Start Race".</p>
               </div>
             </section>
           </CardContent>

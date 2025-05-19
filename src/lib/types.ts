@@ -6,7 +6,14 @@ export interface Driver {
   name: string;
 }
 
-export type RaceConfiguration = z.infer<typeof raceConfigSchema>;
+// Add raceOfficialStartTime to RaceConfiguration
+export interface RaceConfigurationNoStartTime extends z.infer<typeof raceConfigSchema> {
+  // نگهدارنده برای نوع بدون فیلد زمان شروع رسمی مسابقه
+}
+export interface RaceConfiguration extends RaceConfigurationNoStartTime {
+  raceOfficialStartTime?: string; // ISO string from datetime-local, optional
+}
+
 export type DriverSchema = z.infer<typeof driverSchema>;
 
 export interface CurrentRaceState {
@@ -31,7 +38,8 @@ export interface CurrentRaceState {
 
 export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
   drivers: [{ id: 'driver1', name: 'Driver 1' }],
-  stintSequence: ['Driver 1'],
+  stintSequence: ['driver1'],
   fuelDurationMinutes: 60,
   raceDurationMinutes: 120,
+  raceOfficialStartTime: undefined, // Default to undefined
 };
