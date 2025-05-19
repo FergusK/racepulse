@@ -93,13 +93,13 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       return { ...initialRaceState, config, currentDriverId: config.stintSequence[0].driverId };
     case 'SWAP_DRIVER':
       if (!config) return state;
-      const { nextDriverId } = action.payload; // 'refuel' boolean is available from action.payload.refuel if needed for other logic
+      const { nextDriverId, refuel } = action.payload;
       return {
         ...state,
         currentStintIndex: state.currentStintIndex + 1,
         currentDriverId: nextDriverId,
         stintStartTime: currentTime,
-        fuelTankStartTime: state.fuelTankStartTime, // Always carry over fuel from previous state
+        fuelTankStartTime: refuel ? currentTime : state.fuelTankStartTime, // Conditionally reset or carry over
       };
     case 'TICK':
       if (!state.isRaceActive || state.isRacePaused || !config || state.raceCompleted) return state;
@@ -333,45 +333,42 @@ export function RaceInterface() {
             {(() => {
                 const startIndexForDisplay = state.isRaceActive ? state.currentStintIndex + 1 : 0;
                 const stintsToRender = [];
-                let currentCumulativeTime = officialStartTimestamp; 
+                
+                // Calculate the cumulative start time for the first stint to be displayed
+                let cumulativeTimeForFirstDisplayedStintMs: number | null = null;
+                if (hasOfficialStartTime && officialStartTimestamp !== null) {
+                  cumulativeTimeForFirstDisplayedStintMs = officialStartTimestamp;
+                  for (let i = 0; i < startIndexForDisplay; i++) {
+                    const pastStint = config.stintSequence[i];
+                    const pastStintDuration = pastStint.plannedDurationMinutes || config.fuelDurationMinutes;
+                    cumulativeTimeForFirstDisplayedStintMs += pastStintDuration * 60 * 1000;
+                  }
+                }
 
-                // If no official start, we can't calculate cumulative time for display, but we can list drivers and durations.
-                // Pre-calculate cumulative durations if officialStartTime is not set, to show relative timings or just durations.
-                let cumulativeDurationOffsetMinutes = 0;
 
-
-                for (let i = 0; i < config.stintSequence.length; i++) {
+                for (let i = startIndexForDisplay; i < config.stintSequence.length; i++) {
                   const stintEntry = config.stintSequence[i];
                   const stintDurationMinutes = stintEntry.plannedDurationMinutes || config.fuelDurationMinutes;
                   const driver = config.drivers.find(d => d.id === stintEntry.driverId);
 
                   let thisStintPlannedStartTimeMs: number | null = null;
-                  if (currentCumulativeTime !== null) { // If official start time IS set
-                    if (i === 0) {
-                        thisStintPlannedStartTimeMs = currentCumulativeTime;
+                  if (hasOfficialStartTime && cumulativeTimeForFirstDisplayedStintMs !== null) {
+                    if (i === startIndexForDisplay) {
+                        thisStintPlannedStartTimeMs = cumulativeTimeForFirstDisplayedStintMs;
                     } else {
-                         // Add previous stint's duration to the cumulative time
-                        const prevStint = config.stintSequence[i-1];
-                        const prevStintDuration = prevStint.plannedDurationMinutes || config.fuelDurationMinutes;
-                        // This logic might need to be smarter if currentCumulativeTime wasn't just the sum
-                        // For simplicity, assume currentCumulativeTime is being correctly advanced.
-                        // Let's re-initialize and sum up to current stint if officialStartTime is known
-                        thisStintPlannedStartTimeMs = officialStartTimestamp!; // Non-null asserted due to currentCumulativeTime !== null
-                        for (let j = 0; j < i; j++) {
-                            thisStintPlannedStartTimeMs += (config.stintSequence[j].plannedDurationMinutes || config.fuelDurationMinutes) * 60 * 1000;
+                        // Add previous *displayed* stint's duration
+                        const prevDisplayedStint = config.stintSequence[i-1];
+                        const prevDisplayedStintDuration = prevDisplayedStint.plannedDurationMinutes || config.fuelDurationMinutes;
+                         // thisStintPlannedStartTimeMs should be based on the previous stint's start time + its duration
+                        // This logic relies on the previous item in stintsToRender having its plannedStartTimeMs correctly set.
+                        // For simplicity, we'll recalculate from the first displayed stint.
+                        
+                        let tempStartTime = cumulativeTimeForFirstDisplayedStintMs;
+                         for (let j = startIndexForDisplay; j < i; j++) {
+                            tempStartTime += (config.stintSequence[j].plannedDurationMinutes || config.fuelDurationMinutes) * 60 * 1000;
                         }
+                        thisStintPlannedStartTimeMs = tempStartTime;
                     }
-                  }
-
-
-                  if (i < startIndexForDisplay) {
-                     if (hasOfficialStartTime && currentCumulativeTime !== null) {
-                       // This logic for advancing currentCumulativeTime when skipping past stints was missing.
-                       // currentCumulativeTime += stintDurationMinutes * 60 * 1000; // This line was commented or missing in thought process, might be needed
-                     } else {
-                       cumulativeDurationOffsetMinutes += stintDurationMinutes;
-                     }
-                    continue; 
                   }
                   
                   const isCurrentPreRaceHighlight = !state.isRaceActive && hasOfficialStartTime && i === 0 && thisStintPlannedStartTimeMs && thisStintPlannedStartTimeMs > now;
@@ -392,7 +389,7 @@ export function RaceInterface() {
                         </p>
                       ) : !hasOfficialStartTime && (
                          <p className="text-sm text-muted-foreground text-right">
-                           {/* Optionally show relative start time or just duration */}
+                           {/* Duration shown in main text, so no time here if no official start */}
                          </p>
                       )}
                     </li>
@@ -401,7 +398,7 @@ export function RaceInterface() {
 
                 if (stintsToRender.length === 0) {
                   return <p className="text-muted-foreground text-sm">
-                    {config.stintSequence.length === 0 ? "No stints planned in sequence." : (state.isRaceActive ? "All planned stints are in the past or sequence complete." : "No upcoming stints to display at this time.")}
+                    {config.stintSequence.length === 0 ? "No stints planned in sequence." : (state.isRaceActive ? "All planned stints completed or next is current." : "No upcoming stints to display at this time.")}
                   </p>;
                 }
                 return <ul className="space-y-3 max-h-[calc(100vh-20rem)] overflow-y-auto">{stintsToRender}</ul>;
