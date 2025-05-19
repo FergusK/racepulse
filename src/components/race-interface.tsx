@@ -204,22 +204,16 @@ export function RaceInterface() {
 
  useEffect(() => {
     if (typeof raceConfigFromStorage === 'undefined') {
-      // Still waiting for localStorage to be read
       setIsLoading(true); 
       return;
     }
-    setIsLoading(false); // localStorage read, loading is complete
+    setIsLoading(false); 
 
     if (raceConfigFromStorage) {
-      if (!state.config || 
-          state.config.raceOfficialStartTime !== raceConfigFromStorage.raceOfficialStartTime ||
-          state.config.raceDurationMinutes !== raceConfigFromStorage.raceDurationMinutes ||
-          JSON.stringify(state.config.drivers) !== JSON.stringify(raceConfigFromStorage.drivers) 
-         ) {
-        dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
-      }
+       if (!state.config) { // Only load if current state.config is null (initial load)
+         dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+       }
     } else {
-      // No config in storage
       if (!state.isRaceActive && !state.config) { 
         toast({
           title: "Configuration Missing",
@@ -426,157 +420,45 @@ export function RaceInterface() {
         </Alert>
       )}
 
-      {/* Row for Current Status and (optional) Upcoming Stints */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-6">
-        <Card className="shadow-lg lg:col-span-2"> {/* Current Status Card */}
-          <CardHeader>
-             <CardTitle className="text-xl font-semibold text-primary">Current Status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-              <div>
-                <p className="text-sm text-muted-foreground">Current Driver</p>
-                <p className="text-2xl font-semibold text-primary">{currentDriver?.name || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Next Planned Driver</p>
-                <p className="text-xl font-medium">
-                  {state.currentStintIndex +1 >= config.stintSequence.length ? "End of sequence" : (config.drivers.find(d => d.id === config.stintSequence[state.currentStintIndex+1]?.driverId)?.name || "N/A")}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Stint</p>
-                <p className="text-2xl font-semibold">{state.currentStintIndex + 1} / {config.stintSequence.length}</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TimerDisplay label="Current Driver Time" timeMs={stintElapsedTimeMs} isLoading={isLoadingStintTime} />
-                <TimerDisplay
-                    label="Fuel Time Remaining"
-                    timeMs={fuelTimeRemainingMs}
-                    variant={state.fuelAlertActive ? "warning" : "default"}
-                    isLoading={isLoadingFuelTime}
-                />
+      <Card className="shadow-lg mb-6"> {/* Current Status Card */}
+        <CardHeader>
+            <CardTitle className="text-xl font-semibold text-primary">Current Status</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+            <div>
+              <p className="text-sm text-muted-foreground">Current Driver</p>
+              <p className="text-2xl font-semibold text-primary">{currentDriver?.name || "N/A"}</p>
             </div>
             <div>
-              <Label className="text-sm text-muted-foreground">Fuel Level ({fuelDurationForCurrentStintMinutes} min tank)</Label>
-              <Progress value={fuelPercentage} className="w-full h-3 mt-1 [&>div]:bg-primary" />
-              <p className="text-xs text-right text-muted-foreground mt-0.5">{fuelPercentage.toFixed(0)}%</p>
+              <p className="text-sm text-muted-foreground">Next Planned Driver</p>
+              <p className="text-xl font-medium">
+                {state.currentStintIndex +1 >= config.stintSequence.length ? "End of sequence" : (config.drivers.find(d => d.id === config.stintSequence[state.currentStintIndex+1]?.driverId)?.name || "N/A")}
+              </p>
             </div>
-          </CardContent>
-        </Card>
-        
-        {canDisplayUpcomingStintsList && (
-          <Card className="shadow-lg"> {/* Upcoming Stints Card */}
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-primary flex items-center">
-                <Users className="mr-2 h-5 w-5" /> Upcoming Stints
-              </CardTitle>
-               <UICardDescription>
-                 {state.isRaceActive ? "Dynamically updated planned start times." : (hasOfficialStartTime ? "Planned times based on official start." : "Sequence of drivers and planned durations.")}
-               </UICardDescription>
-            </CardHeader>
-            <CardContent>
-              <div>
-                {(() => {
-                    const upcomingStintsToRender = [];
-                    let nextStintBaseTimeMs: number;
-
-                    if (state.isRaceActive && state.stintStartTime !== null && state.config) {
-                        const currentStintData = state.config.stintSequence[state.currentStintIndex];
-                        const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                        nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs;
-                    } else if (hasOfficialStartTime && officialStartTimestamp !== null && state.config) {
-                        nextStintBaseTimeMs = officialStartTimestamp!;
-                        for (let k = 0; k < state.currentStintIndex + 1; k++) { 
-                            if (k < state.config.stintSequence.length) {
-                                const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                                nextStintBaseTimeMs += stintDurationMs;
-                            }
-                        }
-                    } else {
-                        nextStintBaseTimeMs = 0; 
-                    }
-
-                    let cumulativeDurationForUpcomingMs = 0;
-
-                    if (state.config) {
-                        for (let i = state.currentStintIndex + 1; i < state.config.stintSequence.length; i++) {
-                          const stintEntry = state.config.stintSequence[i];
-                          const driver = state.config.drivers.find(d => d.id === stintEntry.driverId);
-                          const stintPlannedDurationMinutes = stintEntry.plannedDurationMinutes || state.config.fuelDurationMinutes;
-
-                          let thisStintExpectedStartTimeMs: number | null = null;
-
-                          if (nextStintBaseTimeMs !== 0) {
-                             thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
-                             cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000;
-                          }
-                          
-                          upcomingStintsToRender.push(
-                            <li key={`${stintEntry.driverId}-${i}`} className={`p-3 rounded-md border flex justify-between items-center bg-muted/30`}>
-                              <div className="flex-grow">
-                                <p className={`font-medium`}>{driver?.name || "N/A"}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Stint #{i + 1} ({stintPlannedDurationMinutes} min)
-                                </p>
-                                {thisStintExpectedStartTimeMs !== null && nextStintBaseTimeMs !== 0 ? (
-                                  <p className="text-xs text-primary font-semibold">
-                                    ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
-                                     ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
-                                  </p>
-                                ) : (
-                                   <p className="text-xs text-muted-foreground">
-                                   </p>
-                                )}
-                              </div>
-                              {!state.raceCompleted && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleOpenEditStintDialog(i, stintEntry.driverId, stintEntry.plannedDurationMinutes)}
-                                  className="ml-2"
-                                  aria-label="Edit Stint"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </li>
-                          );
-                        }
-                    }
-
-                    if (upcomingStintsToRender.length === 0) {
-                      return <p className="text-muted-foreground text-sm">
-                        {config.stintSequence.length === 0 ? "No stints planned." : (state.currentStintIndex >= config.stintSequence.length -1 ? "Final stint or all stints complete." : "No upcoming stints.")}
-                      </p>;
-                    }
-                    return (
-                        <>
-                            <ul className="space-y-3">{upcomingStintsToRender}</ul>
-                            {!state.raceCompleted && (
-                                <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={handleOpenAddStintDialog} 
-                                    className="mt-4 w-full"
-                                    disabled={config.drivers.length === 0}
-                                >
-                                    <PlusCircle className="mr-2 h-4 w-4" /> Add Stint
-                                </Button>
-                            )}
-                        </>
-                    );
-                  })()}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* New Button Group: Pause/Resume and Swap Driver */}
+            <div>
+              <p className="text-sm text-muted-foreground">Stint</p>
+              <p className="text-2xl font-semibold">{state.currentStintIndex + 1} / {config.stintSequence.length}</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TimerDisplay label="Current Driver Time" timeMs={stintElapsedTimeMs} isLoading={isLoadingStintTime} />
+              <TimerDisplay
+                  label="Fuel Time Remaining"
+                  timeMs={fuelTimeRemainingMs}
+                  variant={state.fuelAlertActive ? "warning" : "default"}
+                  isLoading={isLoadingFuelTime}
+              />
+          </div>
+          <div>
+            <Label className="text-sm text-muted-foreground">Fuel Level ({fuelDurationForCurrentStintMinutes} min tank)</Label>
+            <Progress value={fuelPercentage} className="w-full h-3 mt-1 [&>div]:bg-primary" />
+            <p className="text-xs text-right text-muted-foreground mt-0.5">{fuelPercentage.toFixed(0)}%</p>
+          </div>
+        </CardContent>
+      </Card>
+      
       {(state.isRaceActive && !state.raceCompleted) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-6">
             {!state.isRacePaused && (
@@ -600,41 +482,146 @@ export function RaceInterface() {
         </div>
       )}
 
-      {/* Row for Completed Stints (if any) */}
+      {canDisplayUpcomingStintsList && (
+        <Card className="shadow-lg mb-6"> {/* Upcoming Stints Card */}
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold text-primary flex items-center">
+              <Users className="mr-2 h-5 w-5" /> Upcoming Stints
+            </CardTitle>
+              <UICardDescription>
+                {state.isRaceActive ? "Dynamically updated planned start times." : (hasOfficialStartTime ? "Planned times based on official start." : "Sequence of drivers and planned durations.")}
+              </UICardDescription>
+          </CardHeader>
+          <CardContent>
+            <div>
+              {(() => {
+                  const upcomingStintsToRender = [];
+                  let nextStintBaseTimeMs: number;
+
+                  if (state.isRaceActive && state.stintStartTime !== null && state.config) {
+                      const currentStintData = state.config.stintSequence[state.currentStintIndex];
+                      const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
+                      nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs;
+                  } else if (hasOfficialStartTime && officialStartTimestamp !== null && state.config) {
+                      nextStintBaseTimeMs = officialStartTimestamp!;
+                      for (let k = 0; k < state.currentStintIndex + 1; k++) { 
+                          if (k < state.config.stintSequence.length) {
+                              const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
+                              nextStintBaseTimeMs += stintDurationMs;
+                          }
+                      }
+                  } else {
+                      nextStintBaseTimeMs = 0; 
+                  }
+
+                  let cumulativeDurationForUpcomingMs = 0;
+
+                  if (state.config) {
+                      for (let i = state.currentStintIndex + 1; i < state.config.stintSequence.length; i++) {
+                        const stintEntry = state.config.stintSequence[i];
+                        const driver = state.config.drivers.find(d => d.id === stintEntry.driverId);
+                        const stintPlannedDurationMinutes = stintEntry.plannedDurationMinutes || state.config.fuelDurationMinutes;
+
+                        let thisStintExpectedStartTimeMs: number | null = null;
+
+                        if (nextStintBaseTimeMs !== 0) {
+                            thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
+                            cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000;
+                        }
+                        
+                        upcomingStintsToRender.push(
+                          <li key={`${stintEntry.driverId}-${i}`} className={`p-3 rounded-md border flex justify-between items-center bg-muted/30`}>
+                            <div className="flex-grow">
+                              <p className={`font-medium`}>{driver?.name || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Stint #{i + 1} ({stintPlannedDurationMinutes} min)
+                              </p>
+                              {thisStintExpectedStartTimeMs !== null && nextStintBaseTimeMs !== 0 ? (
+                                <p className="text-xs text-primary font-semibold">
+                                  ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
+                                    ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
+                                </p>
+                              ) : (
+                                  <p className="text-xs text-muted-foreground">
+                                  </p>
+                              )}
+                            </div>
+                            {!state.raceCompleted && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleOpenEditStintDialog(i, stintEntry.driverId, stintEntry.plannedDurationMinutes)}
+                                className="ml-2"
+                                aria-label="Edit Stint"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </li>
+                        );
+                      }
+                  }
+
+                  if (upcomingStintsToRender.length === 0) {
+                    return <p className="text-muted-foreground text-sm">
+                      {config.stintSequence.length === 0 ? "No stints planned." : (state.currentStintIndex >= config.stintSequence.length -1 ? "Final stint or all stints complete." : "No upcoming stints.")}
+                    </p>;
+                  }
+                  return (
+                      <>
+                          <ul className="space-y-3">{upcomingStintsToRender}</ul>
+                          {!state.raceCompleted && (
+                              <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={handleOpenAddStintDialog} 
+                                  className="mt-4 w-full"
+                                  disabled={config.drivers.length === 0}
+                              >
+                                  <PlusCircle className="mr-2 h-4 w-4" /> Add Stint
+                              </Button>
+                          )}
+                      </>
+                  );
+                })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {canDisplayCompletedStintsList && (
-        <div className="mb-8">
-          <Card className="shadow-lg"> 
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-primary flex items-center">
-                <History className="mr-2 h-5 w-5" /> Completed Stints
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[50px]">Stint</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead className="text-right">Actual Duration</TableHead>
-                    <TableHead className="text-right">Completed At</TableHead>
+        <Card className="shadow-lg mb-8"> 
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold text-primary flex items-center">
+              <History className="mr-2 h-5 w-5" /> Completed Stints
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[50px]">Stint</TableHead>
+                  <TableHead>Driver</TableHead>
+                  <TableHead className="text-right">Actual Duration</TableHead>
+                  <TableHead className="text-right">Completed At</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.completedStints.slice().reverse().map((stint, index) => ( 
+                  <TableRow key={`${stint.driverId}-${stint.stintNumber}-${index}`}>
+                    <TableCell className="font-medium">#{stint.stintNumber}</TableCell>
+                    <TableCell>{stint.driverName}</TableCell>
+                    <TableCell className="text-right">{formatTime(stint.actualDurationMs)}</TableCell>
+                    <TableCell className="text-right">
+                      {new Date(stint.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {state.completedStints.slice().reverse().map((stint, index) => ( 
-                    <TableRow key={`${stint.driverId}-${stint.stintNumber}-${index}`}>
-                      <TableCell className="font-medium">#{stint.stintNumber}</TableCell>
-                      <TableCell>{stint.driverName}</TableCell>
-                      <TableCell className="text-right">{formatTime(stint.actualDurationMs)}</TableCell>
-                      <TableCell className="text-right">
-                        {new Date(stint.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
       
       {/* Bottom Buttons: Start Race & Reset Race */}
@@ -687,3 +674,5 @@ export function RaceInterface() {
     </div>
   );
 }
+
+    
