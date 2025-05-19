@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, Clock, TimerIcon } from 'lucide-react';
+import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, TimerIcon } from 'lucide-react'; // Removed Clock
 import { useRouter } from 'next/navigation';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { RACE_CONFIG_LOCAL_STORAGE_KEY } from '@/lib/config';
@@ -50,9 +50,9 @@ export function RaceSetupForm() {
 
 
   const onSubmit = (data: RaceConfiguration) => {
-    if (data.raceOfficialStartTime === "") {
-      data.raceOfficialStartTime = undefined;
-    }
+    // Explicitly set raceOfficialStartTime to undefined as the input is removed
+    data.raceOfficialStartTime = undefined;
+    
     // Ensure plannedDurationMinutes is number or undefined
     data.stintSequence = data.stintSequence.map(stint => ({
       ...stint,
@@ -172,6 +172,9 @@ export function RaceSetupForm() {
                       {form.formState.errors.stintSequence?.[index]?.plannedDurationMinutes && (
                         <p className="text-sm text-destructive">{form.formState.errors.stintSequence[index]?.plannedDurationMinutes?.message}</p>
                       )}
+                       {form.formState.errors.stintSequence?.[index]?.driverId && (
+                        <p className="text-sm text-destructive">{form.formState.errors.stintSequence[index]?.driverId?.message}</p>
+                      )}
                     </div>
                     <div className="flex flex-col pt-1">
                       <Button type="button" variant="ghost" size="icon" onClick={() => moveStint(index, Math.max(0, index - 1))} disabled={index === 0} aria-label="Move Stint Up">
@@ -220,20 +223,7 @@ export function RaceSetupForm() {
                 />
                 {form.formState.errors.raceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceDurationMinutes.message}</p>}
               </div>
-              <div className="md:col-span-2">
-                <Label htmlFor="raceOfficialStartTime" className="text-base font-medium flex items-center">
-                  <Clock className="mr-2 h-5 w-5 text-muted-foreground" />
-                  Race Start Time (Optional)
-                </Label>
-                <Input
-                  id="raceOfficialStartTime"
-                  type="datetime-local"
-                  {...form.register('raceOfficialStartTime')}
-                  className="mt-1"
-                />
-                {form.formState.errors.raceOfficialStartTime && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceOfficialStartTime.message}</p>}
-                <p className="text-xs text-muted-foreground mt-1">Leave blank to start the race manually by clicking "Start Race".</p>
-              </div>
+              {/* Race Official Start Time input removed */}
             </section>
           </CardContent>
           <CardFooter className="flex justify-end pt-6">
