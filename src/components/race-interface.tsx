@@ -14,6 +14,7 @@ import { DriverSwapDialog } from '@/components/driver-swap-dialog';
 import { Progress } from "@/components/ui/progress";
 import { Play, Pause, RotateCcw, Users, Fuel, Flag, AlertTriangle, SkipForward } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Label } from "@/components/ui/label";
 
 type RaceAction =
   | { type: 'START_RACE' }
