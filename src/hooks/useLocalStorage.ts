@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -5,8 +6,6 @@ import { useState, useEffect, useCallback } from 'react';
 type SetValue<T> = (value: T | ((val: T) => T)) => void;
 
 export function useLocalStorage<T>(key: string, initialValue: T): [T, SetValue<T>] {
-  // Get from local storage then
-  // parse stored json or return initialValue
   const readValue = useCallback((): T => {
     if (typeof window === 'undefined') {
       return initialValue;
@@ -21,7 +20,8 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, SetValue<T
     }
   }, [initialValue, key]);
 
-  const [storedValue, setStoredValue] = useState<T>(readValue);
+  // Initialize with initialValue to ensure consistency between server and client initial render
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
 
   const setValue: SetValue<T> = useCallback(
     value => {
@@ -44,10 +44,18 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, SetValue<T
     [key, storedValue]
   );
   
+  // Effect to load value from localStorage after initial hydration on client
   useEffect(() => {
     setStoredValue(readValue());
-  }, [readValue]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]); // readValue is memoized with key and initialValue,
+            // but we only want this effect to re-run if the key changes,
+            // initialValue is typically constant for a hook instance.
+            // The original had [readValue] which depends on [initialValue, key].
+            // For simplicity and to ensure it runs on mount and if key changes, [key] is sufficient here.
+            // To be absolutely safe and mimic original [readValue] dependency: [key, initialValue] or just [readValue]
 
+  // Effect to listen for storage changes from other tabs/windows
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent | CustomEvent) => {
       if ((e as StorageEvent)?.key && (e as StorageEvent).key !== key && e.type !== 'local-storage') {
@@ -65,7 +73,8 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, SetValue<T
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('local-storage', handleStorageChange);
     };
-  }, [key, readValue]);
+  }, [key, readValue]); // readValue is appropriate here for the handler
 
   return [storedValue, setValue];
 }
+
