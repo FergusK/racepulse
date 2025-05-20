@@ -32,7 +32,7 @@ export function TimerDisplay({ timeMs, label, className, variant = "default", is
 
   const variantClasses = {
     default: "text-foreground",
-    warning: "text-accent", // Yellow for warning
+    warning: "text-yellow-500", // Brighter yellow for warning
     critical: "text-destructive", // Red for critical
   };
 

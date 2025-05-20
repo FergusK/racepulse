@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -21,11 +20,12 @@ import { Users, RotateCcw, TimerIcon } from "lucide-react";
 interface DriverSwapDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number) => void;
+  onConfirm: (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number, fuelTime?: number) => void;
   currentDriverId: string | null;
   config: RaceConfiguration;
   nextPlannedDriverId?: string | null;
   nextStintOriginalPlannedDurationMinutes?: number;
+  currentRaceTime?: number;
 }
 
 export function DriverSwapDialog({
@@ -36,10 +36,12 @@ export function DriverSwapDialog({
   config,
   nextPlannedDriverId,
   nextStintOriginalPlannedDurationMinutes,
+  currentRaceTime = 0,
 }: DriverSwapDialogProps) {
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [refuel, setRefuel] = useState<boolean>(true);
   const [nextStintDuration, setNextStintDuration] = useState<string>("");
+  const [fuelTime, setFuelTime] = useState<string>("");
 
   useEffect(() => {
     if (isOpen) {
@@ -53,15 +55,29 @@ export function DriverSwapDialog({
       }
       setRefuel(true);
       setNextStintDuration(nextStintOriginalPlannedDurationMinutes?.toString() || "");
+      setFuelTime("");
     }
   }, [isOpen, config.drivers, currentDriverId, nextPlannedDriverId, nextStintOriginalPlannedDurationMinutes]);
 
   const handleConfirm = () => {
     if (selectedDriverId) {
       const duration = nextStintDuration.trim() === "" ? undefined : parseInt(nextStintDuration, 10);
-      onConfirm(selectedDriverId, refuel, isNaN(duration!) ? undefined : duration);
+      const fuelTimeMs = refuel && fuelTime ? parseTimeToMs(fuelTime) : undefined;
+      onConfirm(selectedDriverId, refuel, isNaN(duration!) ? undefined : duration, fuelTimeMs);
       onClose();
     }
+  };
+
+  const formatTime = (ms: number): string => {
+    const date = new Date(ms);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const parseTimeToMs = (timeStr: string): number => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    return date.getTime();
   };
 
   const availableDrivers = config.drivers.filter(d => d.id !== currentDriverId);
@@ -126,6 +142,20 @@ export function DriverSwapDialog({
             <Label htmlFor="refuel" className="text-base font-medium cursor-pointer">
               Refuel vehicle?
             </Label>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="fuelTime" className="text-muted-foreground flex items-center">
+              <TimerIcon className="h-4 w-4 mr-2" />
+              Swap Time (HH:MM)
+            </Label>
+            <Input
+              id="fuelTime"
+              type="time"
+              value={fuelTime}
+              onChange={(e) => setFuelTime(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Optional: Enter the time when the driver swap occurred (24-hour format). If left empty, current time will be used.</p>
           </div>
         </div>
         <DialogFooter>

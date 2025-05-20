@@ -1,4 +1,3 @@
-
 import { z } from 'zod';
 
 export const driverSchema = z.object({
@@ -22,6 +21,13 @@ export const raceConfigSchema = z.object({
     .positive("Fuel duration must be a positive number.")
     .min(1, "Fuel duration must be at least 1 minute.")
     .max(1440, "Fuel duration seems too long (max 24h)."), // Max 24 hours
+  fuelWarningThresholdMinutes: z.preprocess(
+    (val) => (val === "" || val == null ? undefined : parseFloat(String(val))),
+    z.number({invalid_type_error: "Must be a number"})
+      .positive("Warning threshold must be a positive number.")
+      .min(1, "Warning threshold must be at least 1 minute.")
+      .max(60, "Warning threshold seems too long (max 60 minutes).")
+  ),
   raceDurationMinutes: z.number({invalid_type_error: "Must be a number"})
     .positive("Race duration must be a positive number.")
     .min(1, "Race duration must be at least 1 minute.")

@@ -1,4 +1,3 @@
-
 import type { z } from 'zod';
 import type { raceConfigSchema, driverSchema } from '@/lib/validators';
 
@@ -46,6 +45,8 @@ export interface CurrentRaceState {
   
   fuelTankStartTime: number | null; // timestamp when current fuel tank started
   fuelAlertActive: boolean;
+  fuelWarning: boolean;
+  fuelWarningTimeRemaining: number;
 
   raceFinishTime: number | null; // timestamp when race should end based on start and duration
   raceCompleted: boolean;
@@ -60,10 +61,19 @@ export interface CurrentRaceState {
   practicePauseTime: number | null;
 }
 
+export interface Race {
+  id: string;
+  name: string;
+  date: string;
+  location: string;
+  config: RaceConfiguration;
+}
+
 export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
   drivers: [{ id: 'driver1', name: 'Driver 1' }],
   stintSequence: [{ driverId: 'driver1' }], 
   fuelDurationMinutes: 60,
+  fuelWarningThresholdMinutes: 5,
   raceDurationMinutes: 120,
   raceOfficialStartTime: undefined,
   practiceDurationMinutes: undefined,
@@ -80,6 +90,8 @@ export const initialRaceState: Omit<CurrentRaceState, 'config'> = {
   stintStartTime: null,
   fuelTankStartTime: null,
   fuelAlertActive: false,
+  fuelWarning: false,
+  fuelWarningTimeRemaining: 0,
   raceFinishTime: null,
   raceCompleted: false,
   completedStints: [],

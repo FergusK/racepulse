@@ -1,12 +1,11 @@
-
 "use client";
 
-import type { RaceConfiguration, CurrentRaceState, Driver, StintEntry, CompletedStintEntry } from '@/lib/types';
+import type { RaceConfiguration, CurrentRaceState, Driver, StintEntry, CompletedStintEntry, Race } from '@/lib/types';
 import { initialRaceState, DEFAULT_RACE_CONFIG } from '@/lib/types';
 import { useState, useEffect, useCallback, useReducer, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { RACE_CONFIG_LOCAL_STORAGE_KEY, LOW_FUEL_THRESHOLD_MINUTES, RACE_STATE_LOCAL_STORAGE_KEY_FULL } from '@/lib/config';
+import { RACE_CONFIG_LOCAL_STORAGE_KEY, RACE_STATE_LOCAL_STORAGE_KEY_FULL } from '@/lib/config';
 import { TimerDisplay, formatTime } from '@/components/timer-display';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription as UICardDescription } from '@/components/ui/card';
@@ -15,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { DriverSwapDialog } from '@/components/driver-swap-dialog';
 import { EditStintDialog } from '@/components/edit-stint-dialog';
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, RotateCcw, Users, Fuel, Flag, AlertTriangle, TimerIcon, History, Clock, Pencil, PlusCircle, Trash2, Briefcase, CheckCircle2, PauseCircle, PlayCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { Play, Pause, RotateCcw, Users, Fuel, Flag, AlertTriangle, TimerIcon, History, Clock, Pencil, PlusCircle, Trash2, Briefcase, CheckCircle2, PauseCircle, PlayCircle, ArrowUp, ArrowDown, AlertCircle, ArrowLeft, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Table,
@@ -26,6 +25,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from '@/lib/utils';
+import { EditStintTimeDialog } from '@/components/edit-stint-time-dialog';
+import { PitStopDialog } from '@/components/pit-stop-dialog';
+import { NavigationWarningDialog } from "@/components/navigation-warning-dialog";
 
 
 type RaceAction =
@@ -33,7 +35,7 @@ type RaceAction =
   | { type: 'PAUSE_RACE' }
   | { type: 'RESUME_RACE' }
   | { type: 'RESET_RACE_LOGIC' }
-  | { type: 'SWAP_DRIVER'; payload: { nextDriverId: string; refuel: boolean; nextStintPlannedDuration?: number } }
+  | { type: 'SWAP_DRIVER'; payload: { nextDriverId: string; refuel: boolean; nextStintPlannedDuration?: number; fuelTime?: number } }
   | { type: 'TICK'; payload: { currentTime: number } }
   | { type: 'LOAD_CONFIG'; payload: RaceConfiguration }
   | { type: 'SET_FULL_STATE'; payload: CurrentRaceState }
@@ -46,7 +48,9 @@ type RaceAction =
   | { type: 'RESUME_PRACTICE' }
   | { type: 'COMPLETE_PRACTICE' }
   | { type: 'RESET_PRACTICE' }
-  | { type: 'REFUEL_DURING_PRACTICE' };
+  | { type: 'REFUEL_DURING_PRACTICE'; payload: { fuelTime: number } }
+  | { type: 'REFUEL_DURING_RACE'; payload: { fuelTime: number } }
+  | { type: 'UPDATE_STINT_START_TIME'; payload: { newStartTime: number; timeDiff: number } };
 
 
 function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceState {
@@ -118,7 +122,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         const fuelRemainingMs = Math.max(0, fuelDurationMs - fuelElapsedTimeMs);
         loadedState = {
           ...loadedState,
-          fuelAlertActive: fuelRemainingMs < LOW_FUEL_THRESHOLD_MINUTES * 60 * 1000 && fuelRemainingMs > 0,
+          fuelAlertActive: fuelRemainingMs < (loadedState.config?.fuelWarningThresholdMinutes || 5) * 60 * 1000 && fuelRemainingMs > 0,
         };
       }
       if (loadedState.config && (!loadedState.config.practiceDurationMinutes || loadedState.config.practiceDurationMinutes <=0 ) ) {
@@ -261,7 +265,14 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       }
       return {
         ...state,
-        fuelTankStartTime: currentTime, 
+        fuelTankStartTime: action.payload.fuelTime, 
+        fuelAlertActive: false,
+      };
+    case 'REFUEL_DURING_RACE':
+      if (!state.isRaceActive || state.isRacePaused) return state;
+      return {
+        ...state,
+        fuelTankStartTime: action.payload.fuelTime,
         fuelAlertActive: false,
       };
     case 'START_RACE':
@@ -336,17 +347,19 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
     case 'SWAP_DRIVER': {
       if (!config || state.currentDriverId === null || state.stintStartTime === null || (!state.isRaceActive && !state.isPracticeActive) ) return state;
 
-      const { nextDriverId, refuel, nextStintPlannedDuration } = action.payload;
+      const { nextDriverId, refuel, nextStintPlannedDuration, fuelTime } = action.payload;
       const currentDriver = config.drivers.find(d => d.id === state.currentDriverId);
       const originalStintConfig = config.stintSequence[state.currentStintIndex];
+      const currentTime = Date.now();
+      const effectiveSwapTime = fuelTime || currentTime;
 
       const completedStintEntry: CompletedStintEntry = {
         driverId: state.currentDriverId,
         driverName: currentDriver?.name || "N/A",
         stintNumber: state.currentStintIndex + 1,
         startTime: state.stintStartTime,
-        endTime: currentTime,
-        actualDurationMs: currentTime - state.stintStartTime,
+        endTime: effectiveSwapTime,
+        actualDurationMs: effectiveSwapTime - state.stintStartTime,
         plannedDurationMinutes: originalStintConfig?.plannedDurationMinutes,
         refuelled: refuel,
       };
@@ -369,8 +382,8 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         config: updatedConfig,
         currentStintIndex: state.currentStintIndex + 1,
         currentDriverId: nextDriverId,
-        stintStartTime: currentTime,
-        fuelTankStartTime: refuel ? currentTime : (state.fuelTankStartTime || currentTime),
+        stintStartTime: effectiveSwapTime,
+        fuelTankStartTime: refuel ? effectiveSwapTime : state.fuelTankStartTime,
         completedStints: [...state.completedStints, completedStintEntry],
         fuelAlertActive: refuel ? false : state.fuelAlertActive,
       };
@@ -443,7 +456,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
               const fuelElapsedTimeMs_tick = newState.fuelTankStartTime ? effectiveCurrentTimeForFuelTick - newState.fuelTankStartTime : 0;
               const fuelDurationMs_tick = actualFuelTankDurationMinutesForTick * 60 * 1000;
               const fuelRemainingMs_tick = Math.max(0, fuelDurationMs_tick - fuelElapsedTimeMs_tick);
-              const fuelAlert = fuelRemainingMs_tick < LOW_FUEL_THRESHOLD_MINUTES * 60 * 1000 && fuelRemainingMs_tick > 0;
+              const fuelAlert = fuelRemainingMs_tick < (newState.config?.fuelWarningThresholdMinutes || 5) * 60 * 1000 && fuelRemainingMs_tick > 0;
               
               if(newState.fuelAlertActive !== fuelAlert) { 
                 newState = { ...newState, fuelAlertActive: fuelAlert };
@@ -527,6 +540,16 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       return { ...state, config: { ...state.config, stintSequence }, currentDriverId: newCurrentDriverId };
     }
 
+    case 'UPDATE_STINT_START_TIME': {
+      if (!state.config) return state;
+      const { newStartTime, timeDiff } = action.payload;
+      return {
+        ...state,
+        stintStartTime: newStartTime,
+        fuelTankStartTime: state.fuelTankStartTime ? state.fuelTankStartTime + timeDiff : null,
+      };
+    }
+
     default:
       return state;
   }
@@ -559,9 +582,21 @@ const getInitialReducerState = (): CurrentRaceState => {
   };
 };
 
+const formatTimeRemaining = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
 
-export function RaceInterface() {
+interface RaceInterfaceProps {
+  race: Race;
+  onBack: () => void;
+  onSetup: () => void;
+}
+
+export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { toast } = useToast();
   const [raceConfigFromStorage, setRaceConfigFromStorage] = useLocalStorage<RaceConfiguration | null>(RACE_CONFIG_LOCAL_STORAGE_KEY, null);
  
@@ -573,6 +608,10 @@ export function RaceInterface() {
   const [isLoading, setIsLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [currentClockTime, setCurrentClockTime] = useState(new Date());
+  const [isEditStintTimeDialogOpen, setEditStintTimeDialogOpen] = useState(false);
+  const [isPitStopDialogOpen, setPitStopDialogOpen] = useState(false);
+  const [isNavigationWarningOpen, setIsNavigationWarningOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
 
   const hasAttemptedInitialLoad = useRef(false);
 
@@ -649,7 +688,7 @@ export function RaceInterface() {
     let autoStartTimerId: NodeJS.Timeout | null = null;
 
     if (officialStartTimestampFromConfig && officialStartTimestampFromConfig > Date.now() && !state.isRaceActive && !state.raceCompleted && state.config &&
-        !state.isPracticeActive && (state.practiceCompleted || !state.config.practiceDurationMinutes) ) {
+        !state.isPracticeActive && (state.practiceCompleted || !state.config?.practiceDurationMinutes) ) {
       const timeToAutoStart = officialStartTimestampFromConfig - Date.now();
       const currentConfigStartTime = state.config.raceOfficialStartTime;
 
@@ -657,7 +696,7 @@ export function RaceInterface() {
         if (state.config?.raceOfficialStartTime === currentConfigStartTime &&
             Date.now() >= (officialStartTimestampFromConfig || 0) &&
             !state.isRaceActive && !state.raceCompleted &&
-            !state.isPracticeActive && (state.practiceCompleted || !state.config.practiceDurationMinutes)
+            !state.isPracticeActive && (state.practiceCompleted || !state.config?.practiceDurationMinutes)
             ) {
            dispatch({ type: 'START_RACE' });
         }
@@ -686,7 +725,12 @@ export function RaceInterface() {
   const handlePausePractice = () => dispatch({ type: 'PAUSE_PRACTICE' });
   const handleResumePractice = () => dispatch({ type: 'RESUME_PRACTICE' });
   const handleCompletePractice = () => dispatch({ type: 'COMPLETE_PRACTICE' });
-  const handleRefuelDuringPractice = () => dispatch({ type: 'REFUEL_DURING_PRACTICE' });
+  const handleRefuelDuringPractice = () => {
+    setPitStopDialogOpen(true);
+  };
+  const handlePitForFuel = () => {
+    setPitStopDialogOpen(true);
+  };
 
   const handleStartRace = () => dispatch({ type: 'START_RACE' });
   const handlePauseRace = () => dispatch({ type: 'PAUSE_RACE' });
@@ -704,8 +748,21 @@ export function RaceInterface() {
      toast({title: "Race Reset", description: "All race progress has been cleared."});
   }
 
-  const handleSwapDriverConfirm = (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number) => {
-    dispatch({ type: 'SWAP_DRIVER', payload: { nextDriverId, refuel, nextStintPlannedDuration } });
+  const handleSwapDriverConfirm = (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number, fuelTime?: number) => {
+    dispatch({ 
+      type: 'SWAP_DRIVER', 
+      payload: { 
+        nextDriverId, 
+        refuel, 
+        nextStintPlannedDuration,
+        fuelTime 
+      } 
+    });
+
+    toast({
+      title: "Driver Swapped",
+      description: `Switched to ${config.drivers.find(d => d.id === nextDriverId)?.name || "new driver"}`,
+    });
   };
 
   const handleOpenEditStintDialog = (stintIndexInSequence: number, driverId: string, plannedDuration?: number) => {
@@ -751,6 +808,112 @@ export function RaceInterface() {
     }
     dispatch({ type: 'MOVE_STINT_IN_SEQUENCE', payload: { oldIndex: currentIndex, newIndex: newIndex } });
   };
+
+  const handleDriverSwap = (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number, fuelTime?: number) => {
+    if (!state.currentDriverId || !state.stintStartTime) return;
+
+    const currentTime = Date.now();
+    dispatch({
+      type: "SWAP_DRIVER",
+      payload: {
+        nextDriverId,
+        refuel,
+        nextStintPlannedDuration,
+        fuelTime: fuelTime || currentTime,
+      },
+    });
+
+    toast({
+      title: "Driver Swapped",
+      description: `Switched to ${config.drivers.find(d => d.id === nextDriverId)?.name || "new driver"}`,
+    });
+  };
+
+  const handleEditStintTimeConfirm = (newStartTime: number) => {
+    if (state.stintStartTime) {
+      const timeDiff = newStartTime - state.stintStartTime;
+      dispatch({
+        type: 'UPDATE_STINT_START_TIME',
+        payload: { newStartTime, timeDiff }
+      });
+      toast({
+        title: "Start Time Updated",
+        description: "The stint start time has been updated.",
+      });
+    }
+  };
+
+  const handlePitStopConfirm = (fuelTime: number) => {
+    if (state.isRaceActive) {
+      dispatch({ type: 'REFUEL_DURING_RACE', payload: { fuelTime } });
+    } else if (state.isPracticeActive) {
+      dispatch({ type: 'REFUEL_DURING_PRACTICE', payload: { fuelTime } });
+    }
+    toast({
+      title: "Refueled",
+      description: "Fuel tank has been refilled to 100%.",
+    });
+  };
+
+  const handleNavigationAttempt = (navigationCallback: () => void) => {
+    if (state.isRaceActive || state.isPracticeActive) {
+      setPendingNavigation(() => navigationCallback);
+      setIsNavigationWarningOpen(true);
+    } else {
+      navigationCallback();
+    }
+  };
+
+  const handleNavigationConfirm = () => {
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+    setIsNavigationWarningOpen(false);
+  };
+
+  const handleNavigationCancel = () => {
+    setPendingNavigation(null);
+    setIsNavigationWarningOpen(false);
+  };
+
+  // Handle browser back navigation and swipe gestures
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (state.isRaceActive || state.isPracticeActive) {
+        // Firefox requires both preventDefault and returnValue
+        e.preventDefault();
+        e.returnValue = 'You have an active race/practice session. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    const handlePopState = (e: PopStateEvent) => {
+      if (state.isRaceActive || state.isPracticeActive) {
+        e.preventDefault();
+        // Push the current path back to history to prevent immediate navigation
+        window.history.pushState(null, '', pathname);
+        // Show our custom dialog
+        setPendingNavigation(() => () => {
+          // After confirmation, we need to go back twice to overcome the pushState
+          router.back();
+          router.back();
+        });
+        setIsNavigationWarningOpen(true);
+      }
+    };
+
+    // Add an initial history entry to ensure we can catch the back navigation
+    window.history.pushState(null, '', pathname);
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [state.isRaceActive, state.isPracticeActive, router, pathname]);
 
   if (isLoading || !state || !state.config) {
     return (
@@ -865,6 +1028,25 @@ export function RaceInterface() {
 
   return (
     <div className="container mx-auto py-8 px-4">
+      <div className="flex justify-between items-center">
+        <Button
+          variant="outline"
+          onClick={() => handleNavigationAttempt(onBack)}
+          className="flex items-center"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Race List
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => handleNavigationAttempt(() => onSetup())}
+          className="flex items-center"
+        >
+          <Settings className="mr-2 h-4 w-4" />
+          Setup
+        </Button>
+      </div>
+
       {showPracticeSection && (
         <Card className="mb-6 bg-card border-border shadow-lg">
           <CardHeader className="pb-2">
@@ -924,9 +1106,8 @@ export function RaceInterface() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <TimerDisplay label="Race Time Remaining" timeMs={raceTimeRemainingMs} isLoading={isLoadingRaceTimeRemaining || (state.isPracticeActive && !state.practiceCompleted)} />
-          <TimerDisplay label="Elapsed Race Time" timeMs={raceElapsedTimeMs} isLoading={isLoadingElapsedTime || (state.isPracticeActive && !state.practiceCompleted)} />
-           <div className="text-center p-4 rounded-lg shadow-md bg-card border">
-            <div className="text-sm font-medium text-muted-foreground mb-1">Current Clock Time</div>
+          <div className="text-center p-4 rounded-lg shadow-md bg-card border">
+            <div className="text-sm font-medium text-muted-foreground mb-1">Current Time</div>
             <div className="text-4xl font-mono font-bold tracking-wider text-foreground flex items-center justify-center">
               <Clock className="mr-2 h-7 w-7" />
               {currentClockTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -935,6 +1116,16 @@ export function RaceInterface() {
         </CardContent>
       </Card>
       
+      {state.fuelAlertActive && !state.raceCompleted && !((state.isPracticeActive && state.isPracticePaused) || (state.isRaceActive && state.isRacePaused) || (state.practiceCompleted && !state.isRaceActive)) && (
+        <Alert variant="destructive" className="mb-6 bg-destructive/20 border-destructive">
+          <AlertTriangle className="h-5 w-5 text-destructive-foreground" />
+          <AlertTitle className="font-semibold text-destructive-foreground">Low Fuel Warning!</AlertTitle>
+          <AlertDescription className="text-destructive-foreground">
+            Fuel is running low. Prepare for a pit stop.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card className="shadow-lg mb-6">
         <CardHeader>
             <CardTitle className="text-xl font-semibold text-primary">Current Status</CardTitle>
@@ -987,18 +1178,54 @@ export function RaceInterface() {
                   timeMs={fuelTimeRemainingMs}
                   variant={state.fuelAlertActive && !((state.isPracticeActive && state.isPracticePaused) || (state.isRaceActive && state.isRacePaused) || (state.practiceCompleted && !state.isRaceActive)) ? "warning" : "default"}
                   isLoading={isLoadingFuelTime || ((state.isPracticeActive && state.isPracticePaused) || (state.isRaceActive && state.isRacePaused))}
+                  className="font-bold"
               />
           </div>
+          {state.stintStartTime && (state.isRaceActive || state.isPracticeActive) && !state.isRacePaused && !state.isPracticePaused && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Expected Stint End</p>
+                <p className="text-xl font-medium">
+                  {new Date(state.stintStartTime + currentStintPlannedDurationMinutes * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Race Time at Stint End</p>
+                <p className="text-xl font-medium">
+                  {formatTime(Math.max(0, raceTimeRemainingMs - (currentStintPlannedDurationMinutes * 60000 - stintElapsedTimeMs)))}
+                </p>
+              </div>
+            </div>
+          )}
           <div>
             <Label className="text-sm text-muted-foreground">Fuel Level ({actualFuelTankDurationMinutes} min tank)</Label>
-            <Progress value={fuelPercentage} className={cn("w-full h-3 mt-1", "[&>div]:bg-primary", 
+            <Progress value={fuelPercentage} className={cn("w-full h-3 mt-1", 
+                state.fuelAlertActive ? "[&>div]:bg-warning" : "[&>div]:bg-primary",
                 ( (state.isPracticeActive && state.isPracticePaused) || 
                   (state.isRaceActive && state.isRacePaused) ||
                   (isLoadingFuelTime) ||
                   (state.practiceCompleted && !state.isRaceActive && !(state.fuelTankStartTime && state.practiceFinishTime))
                 ) && "opacity-50"
             )} />
-            <p className="text-xs text-right text-muted-foreground mt-0.5">{`${fuelPercentage.toFixed(0)}%`}</p>
+            <p className={cn("text-xs text-right mt-0.5", state.fuelAlertActive ? "text-warning-foreground" : "text-muted-foreground")}>{`${fuelPercentage.toFixed(0)}%`}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Stint Start Time</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xl font-medium">
+                {state.stintStartTime ? new Date(state.stintStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+              </p>
+              {state.stintStartTime && (state.isRaceActive || state.isPracticeActive) && !state.isRacePaused && !state.isPracticePaused && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setEditStintTimeDialogOpen(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1022,23 +1249,23 @@ export function RaceInterface() {
             >
                 <Users className="mr-2 h-5 w-5" /> Swap Driver
             </Button>
+            {(state.isRaceActive || state.isPracticeActive) && !state.isRacePaused && !state.isPracticePaused && (
+                <Button
+                    onClick={handlePitForFuel}
+                    size="lg"
+                    variant="outline"
+                    className="w-full"
+                >
+                    <Fuel className="mr-2 h-5 w-5" /> Pit for Fuel
+                </Button>
+            )}
         </div>
       
-      {state.fuelAlertActive && !state.raceCompleted && !((state.isPracticeActive && state.isPracticePaused) || (state.isRaceActive && state.isRacePaused) || (state.practiceCompleted && !state.isRaceActive)) && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertTriangle className="h-5 w-5 text-destructive" />
-          <AlertTitle className="font-semibold text-destructive">Low Fuel Warning!</AlertTitle>
-          <AlertDescription>
-            Fuel is running low. Prepare for a pit stop.
-          </AlertDescription>
-        </Alert>
-      )}
-
       {state.raceCompleted && (
-         <Alert variant="default" className="mb-6 border-primary bg-primary/10">
-          <Flag className="h-5 w-5 text-primary" />
-          <AlertTitle className="font-semibold text-primary">Race Finished!</AlertTitle>
-          <AlertDescription>
+         <Alert variant="default" className="mb-6 border-primary bg-primary/20">
+          <Flag className="h-5 w-5 text-primary-foreground" />
+          <AlertTitle className="font-semibold text-primary-foreground">Race Finished!</AlertTitle>
+          <AlertDescription className="text-primary-foreground">
             The race has concluded. Total elapsed time: {formatTime(raceElapsedTimeMs)}.
           </AlertDescription>
         </Alert>
@@ -1061,25 +1288,10 @@ export function RaceInterface() {
               <Play className="mr-2 h-5 w-5" /> Start Race
           </Button>
           )}
-          <Button
-          onClick={handleResetRace}
-          variant="destructive"
-          size="lg"
-          className={cn(
-                  "w-full",
-                  (!state.isRaceActive && !state.raceCompleted && !state.isPracticeActive) ? "sm:col-span-1" : "sm:col-span-2"
-              )}
-          disabled={
-                  (timeToRaceStartMs > 0 && !state.isRaceActive && !state.isRacePaused && !state.raceCompleted && !state.isPracticeActive && !state.practiceCompleted && !state.isPracticePaused) ||
-                  (state.isPracticeActive && !state.practiceCompleted && !state.isPracticePaused)
-                  }
-          >
-          <RotateCcw className="mr-2 h-5 w-5" /> Reset Race Data
-          </Button>
       </div>
 
       {canDisplayCompletedStintsList && (
-        <Card className="shadow-lg mb-8 mt-8">
+        <Card className="shadow-lg mb-8 mt-8 bg-card/50 border-border">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-primary flex items-center">
               <History className="mr-2 h-5 w-5" /> Completed Stints
@@ -1115,7 +1327,7 @@ export function RaceInterface() {
       )}
      
       {canDisplayUpcomingStintsList && (
-        <Card className="shadow-lg mt-8 mb-6">
+        <Card className="shadow-lg mt-8 mb-6 bg-card/50 border-border">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-primary flex items-center">
               <Users className="mr-2 h-5 w-5" /> Upcoming Stints
@@ -1126,7 +1338,8 @@ export function RaceInterface() {
             </UICardDescription>
           </CardHeader>
           <CardContent className="p-0">
-             <div className="space-y-3 p-4"> 
+            {config.stintSequence.length > 0 ? (
+              <div className="space-y-3 p-4"> 
                 {config.stintSequence
                   .slice((state.isRaceActive || showPreRaceDriverInfo || (state.isPracticeActive && !state.practiceCompleted)) ? state.currentStintIndex : 0)
                   .map((stintEntry, relativeIndex) => {
@@ -1384,6 +1597,61 @@ export function RaceInterface() {
             isAdding={editingStintInfo.isAdding}
         />
       )}
+
+      <div className="mt-8 flex justify-center">
+        <Button
+          onClick={handleResetRace}
+          variant="destructive"
+          size="sm"
+          className="w-48 bg-destructive/90 hover:bg-destructive text-destructive-foreground"
+          disabled={
+                  (timeToRaceStartMs > 0 && !state.isRaceActive && !state.isRacePaused && !state.raceCompleted && !state.isPracticeActive && !state.practiceCompleted && !state.isPracticePaused) ||
+                  (state.isPracticeActive && !state.practiceCompleted && !state.isPracticePaused)
+                  }
+        >
+          <RotateCcw className="mr-2 h-4 w-4" /> Reset Race Data
+        </Button>
+      </div>
+
+      {state.fuelWarning && (
+        <Alert variant="destructive" className="mb-4 bg-destructive/20 border-destructive">
+          <AlertCircle className="h-4 w-4 text-destructive-foreground" />
+          <AlertTitle className="text-destructive-foreground font-semibold">Fuel Warning</AlertTitle>
+          <AlertDescription className="text-destructive-foreground">
+            <div className="flex items-center gap-2">
+              <span>Low fuel detected. Pit in</span>
+              <span className="font-mono font-bold text-destructive-foreground bg-destructive/30 px-2 py-0.5 rounded">
+                {formatTimeRemaining(state.fuelWarningTimeRemaining)}
+              </span>
+              <span>to avoid running out of fuel.</span>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {state.stintStartTime && (
+        <EditStintTimeDialog
+          isOpen={isEditStintTimeDialogOpen}
+          onClose={() => setEditStintTimeDialogOpen(false)}
+          onConfirm={handleEditStintTimeConfirm}
+          currentStartTime={state.stintStartTime}
+        />
+      )}
+
+      <PitStopDialog
+        isOpen={isPitStopDialogOpen}
+        onClose={() => setPitStopDialogOpen(false)}
+        onConfirm={handlePitStopConfirm}
+        currentTime={now}
+      />
+
+      <NavigationWarningDialog
+        isOpen={isNavigationWarningOpen}
+        onClose={handleNavigationCancel}
+        onConfirm={handleNavigationConfirm}
+        title="Active Session in Progress"
+        description="You have an active race/practice session in progress. Navigating away will stop the current session and all data will be lost. Are you sure you want to continue?"
+      />
     </div>
   );
 }

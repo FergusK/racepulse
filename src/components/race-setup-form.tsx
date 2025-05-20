@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { RaceConfiguration, StintEntry } from '@/lib/types';
@@ -200,44 +199,59 @@ export function RaceSetupForm() {
             
             <Separator />
 
-            {/* Race Parameters */}
-            <section className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              <div>
-                <Label htmlFor="fuelDurationMinutes" className="text-base font-medium">Default Fuel Duration (minutes per tank)</Label>
-                <Input
-                  id="fuelDurationMinutes"
-                  type="number"
-                  {...form.register('fuelDurationMinutes', { valueAsNumber: true })}
-                  placeholder="e.g., 60"
-                  className="mt-1"
-                />
-                {form.formState.errors.fuelDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.fuelDurationMinutes.message}</p>}
-              </div>
-              <div>
-                <Label htmlFor="raceDurationMinutes" className="text-base font-medium">Total Race Duration (minutes)</Label>
-                <Input
-                  id="raceDurationMinutes"
-                  type="number"
-                  {...form.register('raceDurationMinutes', { valueAsNumber: true })}
-                  placeholder="e.g., 240"
-                  className="mt-1"
-                />
-                {form.formState.errors.raceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceDurationMinutes.message}</p>}
-              </div>
-              <div className="md:col-span-2">
-                <Label htmlFor="practiceDurationMinutes" className="text-base font-medium flex items-center">
-                  <Briefcase className="mr-2 h-4 w-4 text-muted-foreground" />
-                  Optional Practice Session Duration (minutes)
-                </Label>
-                <Input
-                  id="practiceDurationMinutes"
-                  type="number"
-                  {...form.register('practiceDurationMinutes')}
-                  placeholder="e.g., 30 (leave blank for no practice)"
-                  className="mt-1"
-                  min="1"
-                />
-                {form.formState.errors.practiceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.practiceDurationMinutes.message}</p>}
+            {/* Race Configuration */}
+            <section>
+              <h3 className="text-xl font-semibold mb-3 text-primary">Race Configuration</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="raceDurationMinutes">Race Duration (minutes)</Label>
+                  <Input
+                    id="raceDurationMinutes"
+                    type="number"
+                    {...form.register('raceDurationMinutes')}
+                    min="1"
+                  />
+                  {form.formState.errors.raceDurationMinutes && (
+                    <p className="text-sm text-destructive">{form.formState.errors.raceDurationMinutes.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fuelDurationMinutes">Fuel Tank Duration (minutes)</Label>
+                  <Input
+                    id="fuelDurationMinutes"
+                    type="number"
+                    {...form.register('fuelDurationMinutes')}
+                    min="1"
+                  />
+                  {form.formState.errors.fuelDurationMinutes && (
+                    <p className="text-sm text-destructive">{form.formState.errors.fuelDurationMinutes.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fuelWarningThresholdMinutes">Fuel Warning Threshold (minutes)</Label>
+                  <Input
+                    id="fuelWarningThresholdMinutes"
+                    type="number"
+                    {...form.register('fuelWarningThresholdMinutes')}
+                    min="1"
+                    max="60"
+                  />
+                  {form.formState.errors.fuelWarningThresholdMinutes && (
+                    <p className="text-sm text-destructive">{form.formState.errors.fuelWarningThresholdMinutes.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="practiceDurationMinutes">Practice Duration (minutes, optional)</Label>
+                  <Input
+                    id="practiceDurationMinutes"
+                    type="number"
+                    {...form.register('practiceDurationMinutes')}
+                    min="1"
+                  />
+                  {form.formState.errors.practiceDurationMinutes && (
+                    <p className="text-sm text-destructive">{form.formState.errors.practiceDurationMinutes.message}</p>
+                  )}
+                </div>
               </div>
             </section>
           </CardContent>
