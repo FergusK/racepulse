@@ -56,6 +56,8 @@ export interface CurrentRaceState {
   practiceStartTime: number | null;
   practiceFinishTime: number | null;
   practiceCompleted: boolean;
+  isPracticePaused: boolean;
+  practicePauseTime: number | null;
 }
 
 export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
@@ -86,5 +88,7 @@ export const initialRaceState: Omit<CurrentRaceState, 'config'> = {
   practiceStartTime: null,
   practiceFinishTime: null,
   practiceCompleted: false,
+  isPracticePaused: false,
+  practicePauseTime: null,
 };
 
