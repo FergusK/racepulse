@@ -12,9 +12,10 @@ export interface StintEntry {
   plannedDurationMinutes?: number;
 }
 
-export interface RaceConfiguration extends Omit<z.infer<typeof raceConfigSchema>, 'stintSequence' | 'raceOfficialStartTime'> {
+export interface RaceConfiguration extends Omit<z.infer<typeof raceConfigSchema>, 'stintSequence' | 'raceOfficialStartTime' | 'practiceDurationMinutes'> {
   stintSequence: StintEntry[];
   raceOfficialStartTime?: string; // ISO string from datetime-local, optional
+  practiceDurationMinutes?: number; // Optional practice session duration
 }
 
 export type DriverSchema = z.infer<typeof driverSchema>;
@@ -49,6 +50,12 @@ export interface CurrentRaceState {
   raceFinishTime: number | null; // timestamp when race should end based on start and duration
   raceCompleted: boolean;
   completedStints: CompletedStintEntry[];
+
+  // Practice Session State
+  isPracticeActive: boolean;
+  practiceStartTime: number | null;
+  practiceFinishTime: number | null;
+  practiceCompleted: boolean;
 }
 
 export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
@@ -57,6 +64,7 @@ export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
   fuelDurationMinutes: 60,
   raceDurationMinutes: 120,
   raceOfficialStartTime: undefined,
+  practiceDurationMinutes: undefined,
 };
 
 export const initialRaceState: Omit<CurrentRaceState, 'config'> = {
@@ -73,4 +81,10 @@ export const initialRaceState: Omit<CurrentRaceState, 'config'> = {
   raceFinishTime: null,
   raceCompleted: false,
   completedStints: [],
+  // Practice initial state
+  isPracticeActive: false,
+  practiceStartTime: null,
+  practiceFinishTime: null,
+  practiceCompleted: false,
 };
+

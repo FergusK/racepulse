@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, TimerIcon } from 'lucide-react'; // Removed Clock
+import { Trash2, PlusCircle, ArrowDown, ArrowUp, Settings2, Play, TimerIcon, Briefcase } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { RACE_CONFIG_LOCAL_STORAGE_KEY } from '@/lib/config';
@@ -50,16 +50,17 @@ export function RaceSetupForm() {
 
 
   const onSubmit = (data: RaceConfiguration) => {
-    // raceOfficialStartTime will be preserved from loaded config if it existed,
-    // as there's no input field for it anymore.
-    
-    // Ensure plannedDurationMinutes is number or undefined
     data.stintSequence = data.stintSequence.map(stint => ({
       ...stint,
       plannedDurationMinutes: stint.plannedDurationMinutes === null || stint.plannedDurationMinutes === undefined || isNaN(Number(stint.plannedDurationMinutes))
         ? undefined
         : Number(stint.plannedDurationMinutes)
     }));
+    // Ensure practiceDurationMinutes is number or undefined
+    data.practiceDurationMinutes = data.practiceDurationMinutes === null || data.practiceDurationMinutes === undefined || isNaN(Number(data.practiceDurationMinutes))
+        ? undefined
+        : Number(data.practiceDurationMinutes);
+
     setSavedConfig(data);
     toast({
       title: "Configuration Saved",
@@ -223,7 +224,21 @@ export function RaceSetupForm() {
                 />
                 {form.formState.errors.raceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.raceDurationMinutes.message}</p>}
               </div>
-              {/* Race Official Start Time input removed */}
+              <div className="md:col-span-2">
+                <Label htmlFor="practiceDurationMinutes" className="text-base font-medium flex items-center">
+                  <Briefcase className="mr-2 h-4 w-4 text-muted-foreground" />
+                  Optional Practice Session Duration (minutes)
+                </Label>
+                <Input
+                  id="practiceDurationMinutes"
+                  type="number"
+                  {...form.register('practiceDurationMinutes')}
+                  placeholder="e.g., 30 (leave blank for no practice)"
+                  className="mt-1"
+                  min="1"
+                />
+                {form.formState.errors.practiceDurationMinutes && <p className="text-sm text-destructive mt-1">{form.formState.errors.practiceDurationMinutes.message}</p>}
+              </div>
             </section>
           </CardContent>
           <CardFooter className="flex justify-end pt-6">

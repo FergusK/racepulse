@@ -32,6 +32,10 @@ export const raceConfigSchema = z.object({
     if (isNaN(parsedDate)) return false;
     return true;
   }, { message: "Invalid date and time format. Leave blank to start manually." }).optional(),
+  practiceDurationMinutes: z.preprocess(
+    (val) => (val === "" || val == null ? undefined : parseInt(String(val), 10)),
+    z.number().positive("Practice duration must be positive.").min(1, "Practice duration must be at least 1 minute.").optional()
+  ),
 }).refine(data => {
     const driverIds = new Set(data.drivers.map(d => d.id));
     return data.stintSequence.every(stint => driverIds.has(stint.driverId));
