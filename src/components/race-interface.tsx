@@ -152,10 +152,9 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         return { ...state, raceCompleted: true, isRaceActive: false, isRacePaused: false };
       }
 
-      // Fuel duration is always based on the global configuration
-      const actualFuelTankDurationMinutes = state.config?.fuelDurationMinutes || 60;
+      const actualFuelTankDurationMinutesForTick = state.config?.fuelDurationMinutes || 60;
       const fuelElapsedTimeMs = state.fuelTankStartTime ? currentTime - state.fuelTankStartTime : 0;
-      const fuelDurationMs = actualFuelTankDurationMinutes * 60 * 1000;
+      const fuelDurationMs = actualFuelTankDurationMinutesForTick * 60 * 1000;
       const fuelRemainingMs = Math.max(0, fuelDurationMs - fuelElapsedTimeMs);
       const fuelAlert = fuelRemainingMs < LOW_FUEL_THRESHOLD_MINUTES * 60 * 1000;
 
@@ -348,7 +347,6 @@ export function RaceInterface() {
     ? currentTimeForCalcs - state.stintStartTime
     : 0;
 
-  // Always use the global fuel duration for actual fuel tank calculations
   const actualFuelTankDurationMinutes = config.fuelDurationMinutes;
   const fuelElapsedTimeMs = state.fuelTankStartTime && state.isRaceActive
     ? currentTimeForCalcs - state.fuelTankStartTime
@@ -357,6 +355,9 @@ export function RaceInterface() {
   const fuelPercentage = Math.max(0, (fuelTimeRemainingMs / (actualFuelTankDurationMinutes * 60 * 1000)) * 100);
 
   const currentDriver = config.drivers.find(d => d.id === state.currentDriverId);
+  const currentStintConfig = state.currentStintIndex < config.stintSequence.length ? config.stintSequence[state.currentStintIndex] : null;
+  const currentStintPlannedDurationMinutes = currentStintConfig?.plannedDurationMinutes || config.fuelDurationMinutes;
+
   const nextPlannedDriverIndex = state.currentStintIndex + 1;
   const nextPlannedStintEntry = nextPlannedDriverIndex < config.stintSequence.length ? config.stintSequence[nextPlannedDriverIndex] : null;
   const nextPlannedDriverId = nextPlannedStintEntry?.driverId || null;
@@ -432,7 +433,7 @@ export function RaceInterface() {
             <CardTitle className="text-xl font-semibold text-primary">Current Status</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-baseline">
             <div>
               <p className="text-sm text-muted-foreground">Current Driver</p>
               <p className="text-2xl font-semibold text-primary">{currentDriver?.name || "N/A"}</p>
@@ -446,6 +447,10 @@ export function RaceInterface() {
             <div>
               <p className="text-sm text-muted-foreground">Stint</p>
               <p className="text-2xl font-semibold">{state.currentStintIndex + 1} / {config.stintSequence.length}</p>
+            </div>
+             <div>
+              <p className="text-sm text-muted-foreground">Planned Stint Duration</p>
+              <p className="text-xl font-medium">{currentStintPlannedDurationMinutes} min</p>
             </div>
           </div>
           
