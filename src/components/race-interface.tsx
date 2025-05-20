@@ -119,6 +119,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         endTime: currentTime,
         actualDurationMs: currentTime - state.stintStartTime,
         plannedDurationMinutes: originalStintConfig?.plannedDurationMinutes,
+        refuelled: refuel,
       };
 
       let updatedConfig = config;
@@ -544,6 +545,7 @@ export function RaceInterface() {
 
                         let thisStintExpectedStartTimeMs: number | null = null;
                         let isPotentiallyTooLate = false;
+                        let remainingRaceTimeAtSwapText: string | null = null;
 
                         if (nextStintBaseTimeMs !== 0) { 
                             thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
@@ -551,6 +553,9 @@ export function RaceInterface() {
 
                             if (state.raceFinishTime && thisStintExpectedStartTimeMs >= state.raceFinishTime) {
                                 isPotentiallyTooLate = true;
+                            } else if (state.raceFinishTime && thisStintExpectedStartTimeMs < state.raceFinishTime) {
+                                const remainingMs = state.raceFinishTime - thisStintExpectedStartTimeMs;
+                                remainingRaceTimeAtSwapText = `Race time left: ${formatTime(remainingMs)}`;
                             }
                         }
                         
@@ -562,13 +567,18 @@ export function RaceInterface() {
                                 Stint #{i + 1} ({stintPlannedDurationMinutes} min)
                               </p>
                               {thisStintExpectedStartTimeMs !== null && nextStintBaseTimeMs !== 0 ? (
-                                <p className={cn("text-xs font-semibold", isPotentiallyTooLate ? "text-destructive" : "text-primary")}>
-                                  {isPotentiallyTooLate && <AlertTriangle className="inline-block h-3 w-3 mr-1 align-text-bottom" />}
-                                  ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
-                                    ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
-                                  {isPotentiallyTooLate && " (After race finish)"}
-                                </p>
+                                <>
+                                  <p className={cn("text-xs font-semibold", isPotentiallyTooLate ? "text-destructive" : "text-primary")}>
+                                    {isPotentiallyTooLate && <AlertTriangle className="inline-block h-3 w-3 mr-1 align-text-bottom" />}
+                                    ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
+                                      ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
+                                    {isPotentiallyTooLate && " (After race finish)"}
+                                  </p>
+                                  {remainingRaceTimeAtSwapText && !isPotentiallyTooLate && (
+                                    <p className="text-xs text-muted-foreground">{remainingRaceTimeAtSwapText}</p>
+                                  )}
+                                </>
                               ) : (
                                   <p className="text-xs text-muted-foreground">
                                     Planned Duration: {stintPlannedDurationMinutes} min
@@ -644,6 +654,7 @@ export function RaceInterface() {
                   <TableHead>Driver</TableHead>
                   <TableHead className="text-right">Actual Duration</TableHead>
                   <TableHead className="text-right">Completed At</TableHead>
+                  <TableHead className="text-center">Refuelled?</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -655,6 +666,7 @@ export function RaceInterface() {
                     <TableCell className="text-right">
                       {new Date(stint.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </TableCell>
+                    <TableCell className="text-center">{stint.refuelled ? "Yes" : "No"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

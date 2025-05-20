@@ -27,6 +27,7 @@ export interface CompletedStintEntry {
   endTime: number; // timestamp
   actualDurationMs: number;
   plannedDurationMinutes?: number; // Original planned duration for this stint
+  refuelled: boolean; // Indicates if a refuel happened at the end of this stint
 }
 
 export interface CurrentRaceState {
