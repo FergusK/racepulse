@@ -32,11 +32,11 @@ type RaceAction =
   | { type: 'START_RACE' }
   | { type: 'PAUSE_RACE' }
   | { type: 'RESUME_RACE' }
-  | { type: 'RESET_RACE_LOGIC' } 
+  | { type: 'RESET_RACE_LOGIC' }
   | { type: 'SWAP_DRIVER'; payload: { nextDriverId: string; refuel: boolean; nextStintPlannedDuration?: number } }
   | { type: 'TICK'; payload: { currentTime: number } }
   | { type: 'LOAD_CONFIG'; payload: RaceConfiguration }
-  | { type: 'SET_FULL_STATE'; payload: CurrentRaceState } 
+  | { type: 'SET_FULL_STATE'; payload: CurrentRaceState }
   | { type: 'UPDATE_STINT_IN_SEQUENCE'; payload: { stintIndex: number; driverId: string; plannedDurationMinutes?: number } }
   | { type: 'ADD_STINT_TO_SEQUENCE'; payload: { driverId: string; plannedDurationMinutes?: number } }
   | { type: 'DELETE_STINT_FROM_SEQUENCE'; payload: { stintIndex: number } };
@@ -49,17 +49,15 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
   switch (action.type) {
     case 'SET_FULL_STATE': {
       let loadedState = action.payload;
-      // Adjust for pause duration that occurred while the page was closed/refreshed
       if (loadedState.isRacePaused && loadedState.pauseTime) {
         const offlinePauseDuration = Math.max(0, currentTime - loadedState.pauseTime);
         loadedState = {
           ...loadedState,
           accumulatedPauseDuration: loadedState.accumulatedPauseDuration + offlinePauseDuration,
-          pauseTime: currentTime, // Reset pauseTime to now for ongoing pause calculation
+          pauseTime: currentTime,
           raceFinishTime: loadedState.raceFinishTime ? loadedState.raceFinishTime + offlinePauseDuration : null,
         };
       }
-      // Re-evaluate fuel alert, as time might have passed
       if (loadedState.config && loadedState.fuelTankStartTime && loadedState.isRaceActive && !loadedState.isRacePaused) {
         const fuelElapsedTimeMs = currentTime - loadedState.fuelTankStartTime;
         const fuelDurationMs = loadedState.config.fuelDurationMinutes * 60 * 1000;
@@ -71,13 +69,49 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       }
       return loadedState;
     }
-    case 'LOAD_CONFIG':
+    case 'LOAD_CONFIG': {
+      const newConfig = action.payload;
+      let newRaceFinishTime = state.raceFinishTime;
+
+      // Adjust raceFinishTime if raceDurationMinutes changed in the new config and race has started
+      if (state.raceStartTime && newConfig && state.config && newConfig.raceDurationMinutes !== state.config.raceDurationMinutes) {
+        const durationDeltaMs = (newConfig.raceDurationMinutes - state.config.raceDurationMinutes) * 60 * 1000;
+        if (state.raceFinishTime) {
+          newRaceFinishTime = state.raceFinishTime + durationDeltaMs;
+        } else { // Should not happen if raceStartTime is set, but as a fallback
+            const referenceStartTimeForDuration = newConfig.raceOfficialStartTime && Date.parse(newConfig.raceOfficialStartTime) <= state.raceStartTime
+                                                ? Date.parse(newConfig.raceOfficialStartTime)
+                                                : state.raceStartTime;
+            newRaceFinishTime = referenceStartTimeForDuration + newConfig.raceDurationMinutes * 60 * 1000 + state.accumulatedPauseDuration;
+        }
+      }
+      
+      let resolvedCurrentDriverId = state.currentDriverId;
+      let resolvedCurrentStintIndex = state.currentStintIndex;
+
+      if (!state.isRaceActive && newConfig.stintSequence.length > 0) {
+        resolvedCurrentStintIndex = 0;
+        resolvedCurrentDriverId = newConfig.stintSequence[0].driverId;
+      } else if (state.isRaceActive && newConfig.stintSequence.length > 0) {
+        if (state.currentStintIndex >= newConfig.stintSequence.length) {
+            // Current stint index is out of bounds from new config. Keep old values for now.
+            // This maintains current driver/stint even if display of upcoming stints changes.
+        } else {
+            resolvedCurrentDriverId = newConfig.stintSequence[state.currentStintIndex]?.driverId || state.currentDriverId;
+        }
+      } else if (newConfig.stintSequence.length === 0) { 
+        resolvedCurrentDriverId = null;
+        resolvedCurrentStintIndex = 0;
+      }
+
       return {
-        ...initialRaceState,
-        config: action.payload,
-        currentDriverId: action.payload.stintSequence.length > 0 ? action.payload.stintSequence[0].driverId : null,
-        completedStints: [], 
+        ...state, 
+        config: newConfig, 
+        currentDriverId: resolvedCurrentDriverId,
+        currentStintIndex: resolvedCurrentStintIndex,
+        raceFinishTime: newRaceFinishTime,
       };
+    }
     case 'START_RACE':
       if (!config) return state;
       const raceStartTime = currentTime;
@@ -92,19 +126,19 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         isRacePaused: false,
         raceStartTime,
         pauseTime: null,
-        accumulatedPauseDuration: 0, 
+        accumulatedPauseDuration: 0,
         currentStintIndex: 0,
         currentDriverId: config.stintSequence[0].driverId,
         stintStartTime: raceStartTime,
         fuelTankStartTime: raceStartTime,
         raceFinishTime,
         raceCompleted: false,
-        completedStints: [], 
+        completedStints: [],
       };
     case 'PAUSE_RACE':
       return { ...state, isRacePaused: true, pauseTime: currentTime };
     case 'RESUME_RACE':
-      if (!state.pauseTime) return state; 
+      if (!state.pauseTime) return state;
       const pauseDuration = currentTime - state.pauseTime;
       const newAccumulatedPauseDuration = state.accumulatedPauseDuration + pauseDuration;
       return {
@@ -114,11 +148,11 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         accumulatedPauseDuration: newAccumulatedPauseDuration,
         raceFinishTime: state.raceFinishTime ? state.raceFinishTime + pauseDuration : null,
       };
-    case 'RESET_RACE_LOGIC': 
-      if (!config) return state; 
+    case 'RESET_RACE_LOGIC':
+      if (!config) return state;
       return {
         ...initialRaceState,
-        config: config, 
+        config: config,
         currentDriverId: config.stintSequence[0]?.driverId || null,
         completedStints: []
       };
@@ -153,7 +187,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         });
         updatedConfig = { ...config, stintSequence: newStintSequence };
       }
-      
+     
       return {
         ...state,
         config: updatedConfig,
@@ -169,20 +203,19 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
 
       if (state.raceFinishTime && currentTime >= state.raceFinishTime) {
         let finalCompletedStints = state.completedStints;
-        // If there was an active stint, record it as completed.
         if (state.currentDriverId && state.stintStartTime !== null && state.raceFinishTime) {
           const currentDriver = config.drivers.find(d => d.id === state.currentDriverId);
           const currentStintData = config.stintSequence[state.currentStintIndex];
-          
+         
           const finalStintEntry: CompletedStintEntry = {
             driverId: state.currentDriverId,
             driverName: currentDriver?.name || "N/A",
             stintNumber: state.currentStintIndex + 1,
             startTime: state.stintStartTime,
-            endTime: state.raceFinishTime, // Race finish time is the end time
+            endTime: state.raceFinishTime,
             actualDurationMs: state.raceFinishTime - state.stintStartTime,
             plannedDurationMinutes: currentStintData?.plannedDurationMinutes,
-            refuelled: false, // No explicit refuel at race end
+            refuelled: false, 
           };
           finalCompletedStints = [...state.completedStints, finalStintEntry];
         }
@@ -196,7 +229,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       const fuelAlert = fuelRemainingMs < LOW_FUEL_THRESHOLD_MINUTES * 60 * 1000;
 
       return { ...state, fuelAlertActive: fuelAlert };
-    
+   
     case 'UPDATE_STINT_IN_SEQUENCE': {
       if (!state.config) return state;
       const { stintIndex, driverId, plannedDurationMinutes } = action.payload;
@@ -221,22 +254,37 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
       if (stintIndex >= 0 && stintIndex < newStintSequence.length) {
         newStintSequence.splice(stintIndex, 1);
       }
-      // If deleting the current stint (should not happen if controls are disabled during race),
-      // or if the currentStintIndex is now out of bounds, adjust it.
-      // This logic might need to be more robust depending on when deletion is allowed.
-      // For now, assume deletion only happens for future stints or when race is not active.
-      const newCurrentStintIndex = state.currentStintIndex >= newStintSequence.length 
-                                 ? Math.max(0, newStintSequence.length -1) 
-                                 : state.currentStintIndex;
+      
+      let newCurrentStintIndex = state.currentStintIndex;
+      let newCurrentDriverId = state.currentDriverId;
 
-      const newCurrentDriverId = newStintSequence[newCurrentStintIndex]?.driverId || null;
+      if (state.isRaceActive) {
+        // If deleting a stint before or at the current active stint, adjust currentStintIndex
+        if (stintIndex < state.currentStintIndex) {
+          newCurrentStintIndex = state.currentStintIndex - 1;
+        } else if (stintIndex === state.currentStintIndex) {
+          // Deleting the currently active stint - this is complex.
+          // For now, advance to next available or clamp. If no next, this is an issue.
+          // This might indicate a need to pause the race or handle more gracefully.
+          // Simplest for now: try to set to the 'new' current, or first if current is now invalid
+          newCurrentStintIndex = Math.min(stintIndex, newStintSequence.length - 1);
+          if (newCurrentStintIndex < 0) newCurrentStintIndex = 0; // if sequence became empty
+        }
+         newCurrentDriverId = newStintSequence[newCurrentStintIndex]?.driverId || null;
+
+      } else { // Race not active, safe to adjust more freely
+         newCurrentStintIndex = state.currentStintIndex >= newStintSequence.length
+                               ? Math.max(0, newStintSequence.length -1)
+                               : state.currentStintIndex;
+         newCurrentDriverId = newStintSequence[newCurrentStintIndex]?.driverId || null;
+      }
 
 
-      return { 
-        ...state, 
+      return {
+        ...state,
         config: { ...state.config, stintSequence: newStintSequence },
         currentStintIndex: newCurrentStintIndex,
-        currentDriverId: state.isRaceActive ? state.currentDriverId : newCurrentDriverId // Only change driver if race not active
+        currentDriverId: newCurrentDriverId,
       };
     }
 
@@ -258,15 +306,15 @@ const getInitialReducerState = (): CurrentRaceState => {
             console.warn("Stored race config in localStorage is malformed, using default.");
         }
       }
-    } catch (e) { 
+    } catch (e) {
       console.warn("Failed to parse race config from localStorage for initial state, using default.", e);
     }
   }
   return {
-    ...initialRaceState, 
+    ...initialRaceState,
     config: configToUse,
     currentDriverId: configToUse.stintSequence[0]?.driverId || null,
-    completedStints: [], 
+    completedStints: [],
   };
 };
 
@@ -274,14 +322,14 @@ const getInitialReducerState = (): CurrentRaceState => {
 export function RaceInterface() {
   const router = useRouter();
   const { toast } = useToast();
-  const [raceConfigFromStorage] = useLocalStorage<RaceConfiguration | null>(RACE_CONFIG_LOCAL_STORAGE_KEY, null);
-  
+  const [raceConfigFromStorage, setRaceConfigFromStorage] = useLocalStorage<RaceConfiguration | null>(RACE_CONFIG_LOCAL_STORAGE_KEY, null);
+ 
   const [state, dispatch] = useReducer(raceReducer, getInitialReducerState());
-  
+ 
   const [isDriverSwapDialogOpen, setDriverSwapDialogOpen] = useState(false);
   const [isEditStintDialogOpen, setEditStintDialogOpen] = useState(false);
   const [editingStintInfo, setEditingStintInfo] = useState<{ index: number; driverId: string; plannedDurationMinutes?: number; isAdding: boolean } | null>(null);
-  const [isLoading, setIsLoading] = useState(true); 
+  const [isLoading, setIsLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [currentClockTime, setCurrentClockTime] = useState(new Date());
 
@@ -299,46 +347,69 @@ export function RaceInterface() {
           } else {
             console.warn("Full race state from localStorage is malformed.");
             window.localStorage.removeItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL);
+            // If full state is bad, try to load just config
+             if (raceConfigFromStorage) {
+                dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+             }
           }
         } catch (e) {
           console.error("Failed to parse full race state from localStorage", e);
-          window.localStorage.removeItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL); 
+          window.localStorage.removeItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL);
+          if (raceConfigFromStorage) {
+             dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+          }
         }
+      } else if (raceConfigFromStorage) {
+        // No full state, but config exists, load that.
+        dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
       }
       hasAttemptedInitialLoad.current = true;
-      setIsLoading(false); 
+      setIsLoading(false);
     }
-  }, []); 
+  }, []); // Run only once on mount, raceConfigFromStorage not needed as dep here
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && hasAttemptedInitialLoad.current && state) {
+    if (typeof window !== 'undefined' && hasAttemptedInitialLoad.current && state && state.config) { // Ensure state.config is not null
       window.localStorage.setItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL, JSON.stringify(state));
     }
-  }, [state]); 
+  }, [state]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof raceConfigFromStorage === 'undefined' || !hasAttemptedInitialLoad.current) {
       return;
     }
-
+  
     if (raceConfigFromStorage) {
-      if (JSON.stringify(raceConfigFromStorage) !== JSON.stringify(state.config)) {
+      if (state.config === null) { // Component just initialized, state.config might be null
+        dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+      } else if (JSON.stringify(raceConfigFromStorage) !== JSON.stringify(state.config)) {
+        // Config changed from elsewhere (e.g. setup page, another tab)
         toast({
-          title: "Configuration Changed",
-          description: "New race settings loaded. Race progress has been reset.",
+          title: "Configuration Updated",
+          description: "Race settings have been updated.",
           variant: "default",
         });
         dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
       }
     } else if (!raceConfigFromStorage && state.config) {
+        // Config was cleared from localStorage, but component still holds old one. Reset.
         toast({
           title: "Configuration Cleared",
-          description: "Race settings were cleared. Resetting to default. Race progress has been reset.",
+          description: "Race settings were cleared. Resetting to default.",
           variant: "destructive",
         });
         dispatch({ type: 'LOAD_CONFIG', payload: DEFAULT_RACE_CONFIG });
     }
-  }, [raceConfigFromStorage, state.config]); 
+  }, [raceConfigFromStorage, state.config, dispatch, toast]);
+  
+  // Persist config changes made internally (e.g., editing a stint on race page)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && state.config && hasAttemptedInitialLoad.current) {
+      if (JSON.stringify(state.config) !== JSON.stringify(raceConfigFromStorage)) {
+         setRaceConfigFromStorage(state.config);
+      }
+    }
+  }, [state.config, setRaceConfigFromStorage, raceConfigFromStorage]);
 
 
   useEffect(() => {
@@ -347,11 +418,11 @@ export function RaceInterface() {
 
     if (officialStartTimestampFromConfig && officialStartTimestampFromConfig > Date.now() && !state.isRaceActive && !state.raceCompleted && state.config) {
       const timeToAutoStart = officialStartTimestampFromConfig - Date.now();
-      const currentConfigStartTime = state.config.raceOfficialStartTime; 
+      const currentConfigStartTime = state.config.raceOfficialStartTime;
 
       autoStartTimerId = setTimeout(() => {
         if (state.config?.raceOfficialStartTime === currentConfigStartTime &&
-            Date.now() >= (officialStartTimestampFromConfig || 0) && 
+            Date.now() >= (officialStartTimestampFromConfig || 0) &&
             !state.isRaceActive && !state.raceCompleted) {
            dispatch({ type: 'START_RACE' });
         }
@@ -360,8 +431,8 @@ export function RaceInterface() {
 
     const tickIntervalId = setInterval(() => {
       const currentTickTime = Date.now();
-      setNow(currentTickTime); 
-      setCurrentClockTime(new Date(currentTickTime)); 
+      setNow(currentTickTime);
+      setCurrentClockTime(new Date(currentTickTime));
       if (state.isRaceActive && !state.isRacePaused && !state.raceCompleted) {
         dispatch({ type: 'TICK', payload: { currentTime: currentTickTime } });
       }
@@ -377,12 +448,14 @@ export function RaceInterface() {
   const handleStartRace = () => dispatch({ type: 'START_RACE' });
   const handlePauseRace = () => dispatch({ type: 'PAUSE_RACE' });
   const handleResumeRace = () => dispatch({ type: 'RESUME_RACE' });
-  
+ 
   const handleResetRace = () => {
      const configToResetWith = state.config || raceConfigFromStorage || DEFAULT_RACE_CONFIG;
-     dispatch({ type: 'LOAD_CONFIG', payload: configToResetWith }); 
+     dispatch({ type: 'RESET_RACE_LOGIC' }); // RESET_RACE_LOGIC uses existing config in state or default if none
      if (typeof window !== 'undefined') {
        window.localStorage.removeItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL);
+       // Also reset the base config to ensure clean state if user navigates away then back
+       setRaceConfigFromStorage(configToResetWith); 
      }
      toast({title: "Race Reset", description: "All race progress has been cleared."});
   }
@@ -399,9 +472,9 @@ export function RaceInterface() {
   const handleOpenAddStintDialog = () => {
     if (config && config.drivers.length > 0) {
       setEditingStintInfo({
-        index: config.stintSequence.length, 
-        driverId: config.drivers[0].id,    
-        plannedDurationMinutes: config.fuelDurationMinutes, 
+        index: config.stintSequence.length,
+        driverId: config.drivers[0].id,   
+        plannedDurationMinutes: config.fuelDurationMinutes,
         isAdding: true,
       });
       setEditStintDialogOpen(true);
@@ -429,7 +502,7 @@ export function RaceInterface() {
   };
 
 
-  if (isLoading || !state || !state.config) { 
+  if (isLoading || !state || !state.config) {
     return (
       <div className="container mx-auto py-8 text-center">
         <p className="text-xl text-muted-foreground">Loading Race Data...</p>
@@ -437,7 +510,7 @@ export function RaceInterface() {
     );
   }
 
-  const { config } = state; 
+  const { config } = state;
   const currentTimeForCalcs = state.isRacePaused && state.pauseTime ? state.pauseTime : now;
 
   const hasOfficialStartTime = !!(config.raceOfficialStartTime && !isNaN(Date.parse(config.raceOfficialStartTime)));
@@ -476,12 +549,12 @@ export function RaceInterface() {
 
 
   const raceNotYetStartedAndHasFutureStartTime = timeToRaceStartMs > 0 && !state.isRaceActive && !state.raceCompleted;
-  const canDisplayUpcomingStintsList = config.stintSequence.length > 0 && state.currentStintIndex < config.stintSequence.length && !state.raceCompleted;
+  const canDisplayUpcomingStintsList = config.stintSequence.length > 0 && !state.raceCompleted; // Simplified: show if sequence exists and race not done
   const canDisplayCompletedStintsList = state.completedStints && state.completedStints.length > 0;
-  
+ 
   const isLoadingRaceTimeRemaining = !state.isRaceActive && !state.isRacePaused && !state.raceCompleted && !raceNotYetStartedAndHasFutureStartTime && raceTimeRemainingMs === config.raceDurationMinutes * 60 * 1000;
-  const isLoadingStintTime = (!state.isRaceActive && !state.isRacePaused) || raceNotYetStartedAndHasFutureStartTime;
-  const isLoadingFuelTime = (!state.isRaceActive && !state.isRacePaused) || raceNotYetStartedAndHasFutureStartTime;
+  const isLoadingStintTime = (!state.isRaceActive && !state.isRacePaused && !state.raceCompleted) || raceNotYetStartedAndHasFutureStartTime;
+  const isLoadingFuelTime = (!state.isRaceActive && !state.isRacePaused && !state.raceCompleted) || raceNotYetStartedAndHasFutureStartTime;
   const isLoadingElapsedTime = !state.isRaceActive && !state.isRacePaused && !state.raceCompleted && raceElapsedTimeMs === 0 && !raceNotYetStartedAndHasFutureStartTime;
 
 
@@ -564,7 +637,7 @@ export function RaceInterface() {
               <p className="text-xl font-medium">{currentStintPlannedDurationMinutes} min</p>
             </div>
           </div>
-          
+         
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <TimerDisplay label="Current Driver Time" timeMs={stintElapsedTimeMs} isLoading={isLoadingStintTime} />
               <TimerDisplay
@@ -581,7 +654,7 @@ export function RaceInterface() {
           </div>
         </CardContent>
       </Card>
-      
+     
       {(state.isRaceActive && !state.raceCompleted) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-6">
             {!state.isRacePaused && (
@@ -623,45 +696,31 @@ export function RaceInterface() {
                   let nextStintBaseTimeMs: number;
 
                   if (state.isRaceActive && state.stintStartTime !== null && state.config && !state.isRacePaused) {
-                      // Base is current time for dynamic ETAs when race is active and running
                       nextStintBaseTimeMs = currentTimeForCalcs;
                   } else if (state.isRacePaused && state.stintStartTime !== null && state.config && state.pauseTime) {
-                      // If paused, base on when current stint *would* end if it ran its course from stintStartTime, then add pause
-                      const currentStintData = state.config.stintSequence[state.currentStintIndex];
-                      const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                      nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs + state.accumulatedPauseDuration;
-                        if (officialStartTimestamp) { // Prefer official start if available, for more stable (though less dynamic) ETAs when paused
+                      if (officialStartTimestamp) { 
                             nextStintBaseTimeMs = officialStartTimestamp;
-                            for (let k=0; k <= state.currentStintIndex; k++) { // Sum durations up to current stint
+                            for (let k=0; k <= state.currentStintIndex; k++) { 
                                 const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
                                 nextStintBaseTimeMs += stintDurationMs;
                             }
-                            nextStintBaseTimeMs += state.accumulatedPauseDuration; // Add total pause time
+                            nextStintBaseTimeMs += state.accumulatedPauseDuration; 
                         } else {
-                            // Fallback if paused and no official start: use current time as base, but acknowledge it's less predictive
-                             nextStintBaseTimeMs = currentTimeForCalcs; 
+                             const currentStintData = state.config.stintSequence[state.currentStintIndex];
+                             const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
+                             nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs + state.accumulatedPauseDuration;
                         }
-
-                  } else if ((hasOfficialStartTime || state.config?.stintSequence.some(s => s.plannedDurationMinutes)) && state.config) { 
-                      // Not active, not paused, but has official start or specific durations: use official start as base
-                      nextStintBaseTimeMs = officialStartTimestamp || currentTimeForCalcs; 
-                      // Calculate sum of durations for stints *before* the current active one, if we're pre-race start.
-                      // If we are calculating for upcoming stints, and race isn't active, currentStintIndex is 0.
-                      // So, the first upcoming stint (index 1) starts after the planned duration of stint 0.
-                      if (hasOfficialStartTime) {
+                  } else if ((hasOfficialStartTime || state.config?.stintSequence.some(s => s.plannedDurationMinutes)) && state.config) {
+                      nextStintBaseTimeMs = officialStartTimestamp || currentTimeForCalcs;
+                      if (hasOfficialStartTime && state.config.stintSequence.length > 0) {
                         const firstStintDurationMs = (state.config.stintSequence[0]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                        nextStintBaseTimeMs = officialStartTimestamp + firstStintDurationMs;
-                      } else { 
-                          // No official start, just durations. Base off current time + first stint's duration.
-                          // This branch is for if we are calculating from current time if no official start.
-                          // The loop below will handle subsequent stints.
+                        nextStintBaseTimeMs = officialStartTimestamp + firstStintDurationMs; // Base for the *second* stint if first exists
+                      } else if (state.config.stintSequence.length > 0) {
                            const firstStintDurationMs = (state.config.stintSequence[0]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
                            nextStintBaseTimeMs = currentTimeForCalcs + firstStintDurationMs;
                       }
                   } else {
-                       // No official start time, no race active/paused, no specific durations in sequence (unlikely if stintSequence exists)
-                      // Cannot reliably calculate ETAs in this scenario. Fallback or hide ETAs.
-                      nextStintBaseTimeMs = 0; 
+                      nextStintBaseTimeMs = 0;
                   }
 
                   let cumulativeDurationForUpcomingMs = 0;
@@ -669,21 +728,19 @@ export function RaceInterface() {
                   if (state.config) {
                       const startIndexForUpcoming = state.isRaceActive || state.isRacePaused ? state.currentStintIndex + 1 : 0;
 
-                      // Adjust base time for active/paused race
-                      // If active, `nextStintBaseTimeMs` is current time. We want to add planned duration of *current* stint to it
-                      // to find the start of the *next* one.
-                      if ((state.isRaceActive || state.isRacePaused) && state.stintStartTime !== null && !state.isRacePaused ) { // Added !state.isRacePaused
-                         const currentStintConfig = state.config.stintSequence[state.currentStintIndex];
-                         const currentStintPlannedDurationMs = (currentStintConfig?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                         const currentStintRemainingMs = Math.max(0, currentStintPlannedDurationMs - stintElapsedTimeMs);
+                      if ((state.isRaceActive || state.isRacePaused) && state.stintStartTime !== null && !state.isRacePaused ) {
+                         const currentStintConfigData = state.config.stintSequence[state.currentStintIndex];
+                         const currentStintPlannedDurationMsForCalc = (currentStintConfigData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
+                         const currentStintRemainingMs = Math.max(0, currentStintPlannedDurationMsForCalc - stintElapsedTimeMs);
                          nextStintBaseTimeMs = currentTimeForCalcs + currentStintRemainingMs;
                       } else if (state.isRacePaused && state.stintStartTime !== null) {
-                        // If paused, and we used official start, it's already calculated.
-                        // If we used currentTimeForCalcs as base, adjust by current stint's full planned duration.
-                        if (!officialStartTimestamp) { // Only adjust if not based on official start
-                            const currentStintData = state.config.stintSequence[state.currentStintIndex];
-                            const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                            nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs + state.accumulatedPauseDuration;
+                        if (!officialStartTimestamp) { 
+                            // Already calculated above if based on officialStartTimestamp + accumulated durations
+                            // If based on current stint start + planned duration:
+                            // const currentStintData = state.config.stintSequence[state.currentStintIndex];
+                            // const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
+                            // nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs + state.accumulatedPauseDuration;
+                            // The above logic for paused state already sets nextStintBaseTimeMs correctly based on official or stint start.
                         }
                       }
 
@@ -697,24 +754,18 @@ export function RaceInterface() {
                         let isPotentiallyTooLate = false;
                         let remainingRaceTimeAtSwapText: string | null = null;
 
-                        if (nextStintBaseTimeMs !== 0 && state.raceFinishTime) { 
-                            // For the very first stint in this loop (i.e., the one immediately after current/or first if race not started)
-                            // `cumulativeDurationForUpcomingMs` is 0.
+                        if (nextStintBaseTimeMs !== 0) {
                             thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
-                            
-                            if (thisStintExpectedStartTimeMs >= state.raceFinishTime) {
+                           
+                            if (state.raceFinishTime && thisStintExpectedStartTimeMs >= state.raceFinishTime) {
                                 isPotentiallyTooLate = true;
-                            } else {
+                            } else if (state.raceFinishTime) {
                                 const remainingMs = state.raceFinishTime - thisStintExpectedStartTimeMs;
                                 remainingRaceTimeAtSwapText = `Race time left: ${formatTime(remainingMs)}`;
                             }
-                             // For subsequent stints in this loop, add their planned duration
-                            cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000; 
-                        } else if (nextStintBaseTimeMs !== 0) { 
-                            thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
                             cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000;
                         }
-                        
+                       
                         upcomingStintsToRender.push(
                           <li key={`${stintEntry.driverId}-${i}`} className={`p-3 rounded-md border flex justify-between items-center bg-muted/30`}>
                             <div className="flex-grow">
@@ -738,7 +789,7 @@ export function RaceInterface() {
                               ) : (
                                   <p className="text-xs text-muted-foreground">
                                     Planned Duration: {stintPlannedDurationMinutes} min
-                                    {state.isRacePaused && " (ETA calculation paused)"}
+                                    {state.isRacePaused && !hasOfficialStartTime && " (ETA calculation paused or needs official start)"}
                                   </p>
                               )}
                             </div>
@@ -750,7 +801,7 @@ export function RaceInterface() {
                                   onClick={() => handleOpenEditStintDialog(i, stintEntry.driverId, stintEntry.plannedDurationMinutes)}
                                   className="ml-2"
                                   aria-label="Edit Stint"
-                                  disabled={state.isRacePaused || i < state.currentStintIndex +1} // Disable for already passed/current in calculation
+                                  disabled={state.isRacePaused || (state.isRaceActive && i < state.currentStintIndex +1)}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
@@ -760,7 +811,7 @@ export function RaceInterface() {
                                   onClick={() => handleDeleteStint(i)}
                                   className="ml-1 text-destructive hover:text-destructive/80"
                                   aria-label="Delete Stint"
-                                  disabled={state.isRacePaused || i < state.currentStintIndex +1}
+                                  disabled={state.isRacePaused || (state.isRaceActive && i < state.currentStintIndex +1)}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -773,17 +824,17 @@ export function RaceInterface() {
 
                   if (upcomingStintsToRender.length === 0) {
                     return <p className="text-muted-foreground text-sm">
-                      {config.stintSequence.length === 0 ? "No stints planned." : (state.currentStintIndex >= config.stintSequence.length -1 ? "Final stint or all stints complete." : "No upcoming stints.")}
+                      {config.stintSequence.length === 0 ? "No stints planned." : ( (state.isRaceActive && state.currentStintIndex >= config.stintSequence.length -1) || state.raceCompleted ? "Final stint or all stints complete." : "No upcoming stints to display under current filter or race not started.")}
                     </p>;
                   }
                   return (
                       <>
                           <ul className="space-y-3">{upcomingStintsToRender}</ul>
                           {!state.raceCompleted && (
-                              <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={handleOpenAddStintDialog} 
+                              <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleOpenAddStintDialog}
                                   className="mt-4 w-full"
                                   disabled={config.drivers.length === 0 || state.isRacePaused}
                               >
@@ -799,7 +850,7 @@ export function RaceInterface() {
       )}
 
       {canDisplayCompletedStintsList && (
-        <Card className="shadow-lg mb-8"> 
+        <Card className="shadow-lg mb-8">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-primary flex items-center">
               <History className="mr-2 h-5 w-5" /> Completed Stints
@@ -817,7 +868,7 @@ export function RaceInterface() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {state.completedStints.slice().reverse().map((stint, index) => ( 
+                {state.completedStints.slice().reverse().map((stint, index) => (
                   <TableRow key={`${stint.driverId}-${stint.stintNumber}-${index}`}>
                     <TableCell className="font-medium">#{stint.stintNumber}</TableCell>
                     <TableCell>{stint.driverName}</TableCell>
@@ -833,7 +884,7 @@ export function RaceInterface() {
           </CardContent>
         </Card>
       )}
-      
+     
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
         {!state.isRaceActive && !state.raceCompleted && (
           <Button
@@ -851,7 +902,7 @@ export function RaceInterface() {
           size="lg"
           className={cn(
                 "w-full",
-                 (state.isRaceActive || state.raceCompleted || state.isRacePaused || (!state.isRaceActive && !state.raceCompleted)) && "sm:col-span-2"
+                 (!state.isRaceActive && !state.raceCompleted) ? "sm:col-span-1" : "sm:col-span-2" // Full width if Start button not shown
             )}
           disabled={raceNotYetStartedAndHasFutureStartTime && !state.isRaceActive && !state.isRacePaused && !state.raceCompleted}
         >
