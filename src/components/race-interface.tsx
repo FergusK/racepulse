@@ -1230,33 +1230,56 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
         </CardContent>
       </Card>
 
-       <div className="my-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+       <div className="my-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {!state.isRaceActive && !state.raceCompleted && !state.isPracticeActive && (
+                <Button
+                    onClick={handleStartRace}
+                    size="sm"
+                    className="w-full bg-primary hover:bg-primary/80 text-primary-foreground"
+                    disabled={
+                        (timeToRaceStartMs > 0 && !(state.practiceCompleted || !config.practiceDurationMinutes)) ||
+                        state.isRacePaused || 
+                        state.isPracticeActive || 
+                        state.isPracticePaused ||
+                        (!state.practiceCompleted && !!config.practiceDurationMinutes && config.practiceDurationMinutes > 0)
+                    }
+                >
+                    <Play className="mr-2 h-4 w-4" /> Start Race
+                </Button>
+            )}
             {state.isRaceActive && !state.isRacePaused && !state.raceCompleted && !state.isPracticeActive && (
-                <Button onClick={handlePauseRace} variant="outline" size="lg" className="w-full">
-                    <Pause className="mr-2 h-5 w-5" /> Pause Race
+                <Button onClick={handlePauseRace} variant="outline" size="sm" className="w-full">
+                    <Pause className="mr-2 h-4 w-4" /> Pause Race
                 </Button>
             )}
             {state.isRaceActive && state.isRacePaused && !state.raceCompleted && !state.isPracticeActive && (
-                <Button onClick={handleResumeRace} size="lg" className="w-full bg-primary hover:bg-primary/80 text-primary-foreground">
-                    <Play className="mr-2 h-5 w-5" /> Resume Race
+                <Button onClick={handleResumeRace} size="sm" className="w-full bg-primary hover:bg-primary/80 text-primary-foreground">
+                    <Play className="mr-2 h-4 w-4" /> Resume Race
                 </Button>
             )}
             <Button
                 onClick={() => setDriverSwapDialogOpen(true)}
-                size="lg"
-                disabled={state.isRacePaused || state.isPracticeActive || !state.currentDriverId || (state.currentStintIndex >= config.stintSequence.length -1 && !config.stintSequence[state.currentStintIndex+1]) }
+                size="sm"
+                variant="default"
+                disabled={
+                    state.isRacePaused || 
+                    state.isPracticeActive || 
+                    !state.currentDriverId || 
+                    (state.currentStintIndex >= config.stintSequence.length -1 && !config.stintSequence[state.currentStintIndex+1]) ||
+                    !state.isRaceActive
+                }
                 className="w-full"
             >
-                <Users className="mr-2 h-5 w-5" /> Swap Driver
+                <Users className="mr-2 h-4 w-4" /> Swap Driver
             </Button>
             {(state.isRaceActive || state.isPracticeActive) && !state.isRacePaused && !state.isPracticePaused && (
                 <Button
                     onClick={handlePitForFuel}
-                    size="lg"
+                    size="sm"
                     variant="outline"
                     className="w-full"
                 >
-                    <Fuel className="mr-2 h-5 w-5" /> Pit for Fuel
+                    <Fuel className="mr-2 h-4 w-4" /> Pit for Fuel
                 </Button>
             )}
         </div>
@@ -1270,25 +1293,6 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
           </AlertDescription>
         </Alert>
       )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
-          {!state.isRaceActive && !state.raceCompleted && !state.isPracticeActive && (
-          <Button
-              onClick={handleStartRace}
-              size="lg"
-              className="w-full bg-primary hover:bg-primary/80 text-primary-foreground"
-              disabled={
-                  (timeToRaceStartMs > 0 && !(state.practiceCompleted || !config.practiceDurationMinutes)) ||
-                  state.isRacePaused || 
-                  state.isPracticeActive || 
-                  state.isPracticePaused ||
-                  (!state.practiceCompleted && !!config.practiceDurationMinutes && config.practiceDurationMinutes > 0)
-              }
-          >
-              <Play className="mr-2 h-5 w-5" /> Start Race
-          </Button>
-          )}
-      </div>
 
       {canDisplayCompletedStintsList && (
         <Card className="shadow-lg mb-8 mt-8 bg-card/50 border-border">
