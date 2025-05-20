@@ -155,7 +155,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         practiceCompleted: false,
         practiceStartTime: currentTime,
         practiceFinishTime: currentTime + config.practiceDurationMinutes * 60 * 1000,
-        fuelTankStartTime: currentTime, // Start fuel countdown for practice
+        fuelTankStartTime: currentTime, 
         fuelAlertActive: false,
       };
     case 'COMPLETE_PRACTICE':
@@ -180,6 +180,9 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
                                             ? Date.parse(config.raceOfficialStartTime)
                                             : raceStartTime;
       const raceFinishTime = referenceStartTimeForDuration + config.raceDurationMinutes * 60 * 1000;
+      
+      // Determine if fuel state should carry over from practice
+      const carryOverFuelFromPractice = state.practiceCompleted && state.practiceStartTime !== null;
 
       return {
         ...state,
@@ -191,8 +194,8 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         currentStintIndex: 0,
         currentDriverId: config.stintSequence[0]?.driverId || null,
         stintStartTime: raceStartTime,
-        fuelTankStartTime: raceStartTime, 
-        fuelAlertActive: false,
+        fuelTankStartTime: carryOverFuelFromPractice ? state.fuelTankStartTime : raceStartTime, 
+        fuelAlertActive: carryOverFuelFromPractice ? state.fuelAlertActive : false,
         raceFinishTime,
         raceCompleted: false,
         completedStints: [], 
@@ -455,40 +458,59 @@ export function RaceInterface() {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !hasAttemptedInitialLoad.current) {
-      return; 
+      return;
     }
     if (raceConfigFromStorage) {
-      if (state.config === null || JSON.stringify(raceConfigFromStorage) !== JSON.stringify(state.config)) {
-         if (state.config !== null && state.config?.raceOfficialStartTime === raceConfigFromStorage.raceOfficialStartTime && state.config.raceDurationMinutes === raceConfigFromStorage.raceDurationMinutes) {
-           // If only minor config like driver name or stint sequence order changed, but not critical timing, preserve state
-           dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
-            toast({
-                title: "Configuration Synced",
-                description: "Race settings have been updated from storage. Race in progress preserved.",
-                variant: "default",
-            });
-         } else {
-            // More significant change, full reload/reset of progress for that config
-            dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
-            dispatch({ type: 'RESET_RACE_LOGIC' }); // Reset timers and progress
-             toast({
-                title: "Configuration Updated",
-                description: "Race settings have changed. Race progress has been reset.",
-                variant: "default",
-            });
-         }
-      }
+        if (state.config === null || JSON.stringify(raceConfigFromStorage) !== JSON.stringify(state.config)) {
+           // If a full state was loaded, state.config might be different from raceConfigFromStorage
+           // only dispatch LOAD_CONFIG if the difference is significant (e.g., timing critical fields)
+           // or if no full state was loaded (state.config is still from getInitialReducerState)
+           const isFullStateLikelyLoaded = state.raceStartTime !== null || state.completedStints.length > 0;
+           const criticalConfigChanged = state.config === null || 
+                                        state.config.raceOfficialStartTime !== raceConfigFromStorage.raceOfficialStartTime ||
+                                        state.config.raceDurationMinutes !== raceConfigFromStorage.raceDurationMinutes ||
+                                        state.config.fuelDurationMinutes !== raceConfigFromStorage.fuelDurationMinutes ||
+                                        state.config.practiceDurationMinutes !== raceConfigFromStorage.practiceDurationMinutes;
+
+           if (!isFullStateLikelyLoaded || criticalConfigChanged) {
+             dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+             // If critical config changes and a race was active or completed, it implies a reset.
+             if ((state.isRaceActive || state.raceCompleted || state.isPracticeActive || state.practiceCompleted) && criticalConfigChanged) {
+                dispatch({ type: 'RESET_RACE_LOGIC' });
+                 toast({
+                    title: "Configuration Updated",
+                    description: "Critical race settings changed. Race progress has been reset.",
+                    variant: "default",
+                });
+             } else if (!criticalConfigChanged && isFullStateLikelyLoaded) {
+                 // Non-critical update, preserve state and just update config
+                dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+                toast({
+                    title: "Configuration Synced",
+                    description: "Race settings updated from storage. In-progress race preserved.",
+                    variant: "default",
+                });
+             } else {
+                // Initial load or non-critical update with no active race
+                dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+             }
+
+           } else if (JSON.stringify(state.config) !== JSON.stringify(raceConfigFromStorage)) {
+             // Non-critical update (e.g. driver name change) and full state is active, just update config
+             dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
+           }
+        }
     } else if (state.config !== null) { // Config was cleared from storage
-      toast({
-        title: "Configuration Cleared",
-        description: "Race settings were cleared. Resetting to default.",
-        variant: "destructive",
-      });
-      dispatch({ type: 'LOAD_CONFIG', payload: DEFAULT_RACE_CONFIG });
-      dispatch({ type: 'RESET_RACE_LOGIC' });
+        toast({
+            title: "Configuration Cleared",
+            description: "Race settings were cleared. Resetting to default.",
+            variant: "destructive",
+        });
+        dispatch({ type: 'LOAD_CONFIG', payload: DEFAULT_RACE_CONFIG });
+        dispatch({ type: 'RESET_RACE_LOGIC' });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [raceConfigFromStorage, dispatch]); 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raceConfigFromStorage, dispatch]);
                                          
   useEffect(() => {
     if (typeof window !== 'undefined' && state.config && hasAttemptedInitialLoad.current) {
@@ -534,7 +556,7 @@ export function RaceInterface() {
       clearInterval(tickIntervalId);
       if (autoStartTimerId) clearInterval(autoStartTimerId);
     };
-  }, [state.isRaceActive, state.isRacePaused, state.raceCompleted, state.config?.raceOfficialStartTime, state.config, dispatch, state.isPracticeActive, state.practiceCompleted]); 
+  }, [state.isRaceActive, state.isRacePaused, state.raceCompleted, state.config, dispatch, state.isPracticeActive, state.practiceCompleted]); 
 
   const handleStartPractice = () => dispatch({ type: 'START_PRACTICE' });
   const handleCompletePractice = () => dispatch({ type: 'COMPLETE_PRACTICE' });
@@ -630,11 +652,11 @@ export function RaceInterface() {
   
   let fuelElapsedTimeMs = 0;
   if (state.fuelTankStartTime) {
-    if (state.isPracticeActive) { // Fuel counts down during active practice
+    if (state.isPracticeActive) { 
       fuelElapsedTimeMs = currentTimeForCalcs - state.fuelTankStartTime;
-    } else if (state.isRaceActive && !state.isRacePaused) { // Fuel counts down during active, non-paused race
+    } else if (state.isRaceActive && !state.isRacePaused) { 
       fuelElapsedTimeMs = currentTimeForCalcs - state.fuelTankStartTime;
-    } else if (state.isRaceActive && state.isRacePaused && state.pauseTime) { // Fuel is "paused" during a race pause
+    } else if (state.isRaceActive && state.isRacePaused && state.pauseTime) { 
       fuelElapsedTimeMs = state.pauseTime - state.fuelTankStartTime;
     }
   }
@@ -751,7 +773,7 @@ export function RaceInterface() {
             <div>
               <p className="text-sm text-muted-foreground">Current Driver</p>
               <p className={cn("text-2xl font-semibold", state.isPracticeActive ? "text-muted-foreground" : "text-primary")}>
-                {currentDriver?.name || (state.isPracticeActive ? "N/A (Practice)" : "N/A")}
+                {currentDriver?.name || (state.isPracticeActive ? "N/A (Practice)" : (state.stintStartTime === null ? "N/A" : "N/A"))}
               </p>
             </div>
             <div>
@@ -769,7 +791,7 @@ export function RaceInterface() {
              <div>
               <p className="text-sm text-muted-foreground">Planned Stint Duration</p>
               <p className={cn("text-xl font-medium", state.isPracticeActive ? "text-muted-foreground" : "")}>
-                {state.isPracticeActive ? "N/A" : `${currentStintPlannedDurationMinutes} min`}
+                 {state.isPracticeActive ? "N/A" : (state.stintStartTime === null && !state.isRaceActive && !state.raceCompleted ? "N/A" : `${currentStintPlannedDurationMinutes} min`)}
               </p>
             </div>
           </div>
@@ -785,7 +807,7 @@ export function RaceInterface() {
           </div>
           <div>
             <Label className="text-sm text-muted-foreground">Fuel Level ({actualFuelTankDurationMinutes} min tank)</Label>
-            <Progress value={fuelPercentage} className={cn("w-full h-3 mt-1", "[&>div]:bg-primary")} />
+            <Progress value={fuelPercentage} className={cn("w-full h-3 mt-1", "[&>div]:bg-primary", state.isPracticeActive && "opacity-70")} />
             <p className="text-xs text-right text-muted-foreground mt-0.5">{`${fuelPercentage.toFixed(0)}%`}</p>
           </div>
         </CardContent>
