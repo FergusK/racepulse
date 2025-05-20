@@ -4,52 +4,16 @@
 import { Fuel } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { RACE_STATE_LOCAL_STORAGE_KEY_FULL } from '@/lib/config';
-import type { CurrentRaceState } from '@/lib/types';
+import { useRouter } from 'next/navigation';
 
 export function SiteHeader() {
   const router = useRouter();
-  const pathname = usePathname();
-  const [isAlertDialogOpen, setAlertDialogOpen] = useState(false);
 
+  // Direct navigation to setup, no warning dialog.
+  // The RaceInterface component is responsible for loading persisted state.
+  // It will also reset if settings are actually changed on the setup page.
   const handleSetupNavigation = () => {
-    if (pathname === '/race') {
-      if (typeof window !== 'undefined') {
-        const rawSavedState = window.localStorage.getItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL);
-        if (rawSavedState) {
-          try {
-            const parsedState: CurrentRaceState = JSON.parse(rawSavedState);
-            // Check if a race has started and is not yet completed
-            if (parsedState && parsedState.raceStartTime !== null && !parsedState.raceCompleted) {
-              setAlertDialogOpen(true);
-              return; // Stop navigation, show dialog
-            }
-          } catch (e) {
-            console.error("Error parsing race state for navigation warning:", e);
-            // Fall through to direct navigation if parsing fails
-          }
-        }
-      }
-    }
-    // If not on /race, or no active/progressing race found, or error
     router.push('/');
-  };
-
-  const confirmNavigationToSetup = () => {
-    router.push('/');
-    setAlertDialogOpen(false);
   };
 
   return (
@@ -72,23 +36,8 @@ export function SiteHeader() {
           </nav>
         </div>
       </header>
-
-      <AlertDialog open={isAlertDialogOpen} onOpenChange={setAlertDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard Race Progress?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Navigating to the Setup page will reset your current race progress. This action cannot be undone. Are you sure you want to continue?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setAlertDialogOpen(false)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmNavigationToSetup}>
-              Continue to Setup
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* AlertDialog has been removed */}
     </>
   );
 }
+
