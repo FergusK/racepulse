@@ -214,11 +214,12 @@ export function RaceInterface() {
     setIsLoading(false); 
 
     if (raceConfigFromStorage) {
-       if (!state.config) { 
+       if (!state.config) { // Only load if current state.config is null (initial load)
          dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage });
        }
     } else {
-      if (!state.isRaceActive && !state.config) { 
+      // If no config in storage, and current state.config is also null (meaning this component is just mounting without prior state)
+      if (!state.config) { 
         toast({
           title: "Configuration Missing",
           description: "No race configuration found. Please set up the race first.",
@@ -238,6 +239,7 @@ export function RaceInterface() {
       const currentConfigStartTime = state.config.raceOfficialStartTime; 
 
       autoStartTimerId = setTimeout(() => {
+        // Re-check conditions before dispatching, in case state changed
         if (state.config?.raceOfficialStartTime === currentConfigStartTime &&
             Date.now() >= (officialStartTimestampFromConfig || 0) && 
             !state.isRaceActive && !state.raceCompleted) {
@@ -259,10 +261,11 @@ export function RaceInterface() {
       clearInterval(tickIntervalId);
       if (autoStartTimerId) clearInterval(autoStartTimerId);
     };
-  }, [state.isRaceActive, state.isRacePaused, state.raceCompleted, state.config?.raceOfficialStartTime, dispatch]);
+  }, [state.isRaceActive, state.isRacePaused, state.raceCompleted, state.config?.raceOfficialStartTime, state.config, dispatch]);
 
 
   useEffect(() => {
+    // Persist state.config to localStorage if it changes and is different from what's in storage
     if (state.config && typeof raceConfigFromStorage !== 'undefined' && JSON.stringify(state.config) !== JSON.stringify(raceConfigFromStorage)) {
         setRaceConfigFromStorage(state.config);
     }
@@ -272,11 +275,15 @@ export function RaceInterface() {
   const handlePauseRace = () => dispatch({ type: 'PAUSE_RACE' });
   const handleResumeRace = () => dispatch({ type: 'RESUME_RACE' });
   const handleResetRace = () => {
+     // Load config from storage first to ensure reset uses persisted setup values
      if (raceConfigFromStorage) {
         dispatch({ type: 'LOAD_CONFIG', payload: raceConfigFromStorage }); 
-     } else if (state.config) { 
-        dispatch({ type: 'RESET_RACE' }); 
+        // LOAD_CONFIG resets runtime state, including completedStints. 
+        // It will set state.config based on raceConfigFromStorage
+     } else if (state.config) { // Fallback if nothing in storage but we have a config in state
+        dispatch({ type: 'RESET_RACE' }); // This uses state.config
      }
+     // No need to call setNow here, dispatch will trigger re-render
   }
 
   const handleSwapDriverConfirm = (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number) => {
@@ -291,9 +298,9 @@ export function RaceInterface() {
   const handleOpenAddStintDialog = () => {
     if (config && config.drivers.length > 0) {
       setEditingStintInfo({
-        index: config.stintSequence.length, 
-        driverId: config.drivers[0].id,    
-        plannedDurationMinutes: config.fuelDurationMinutes, 
+        index: config.stintSequence.length, // Index for the new stint
+        driverId: config.drivers[0].id,    // Default to first driver
+        plannedDurationMinutes: config.fuelDurationMinutes, // Default to global fuel duration
         isAdding: true,
       });
       setEditStintDialogOpen(true);
@@ -505,39 +512,49 @@ export function RaceInterface() {
                   const upcomingStintsToRender = [];
                   let nextStintBaseTimeMs: number;
 
+                  // Calculate the base time for the *next* stint's ETA
                   if (state.isRaceActive && state.stintStartTime !== null && state.config) {
+                      // Race is active: base is current stint's actual start + its planned duration
                       const currentStintData = state.config.stintSequence[state.currentStintIndex];
                       const currentStintPlannedDurationMs = (currentStintData?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
                       nextStintBaseTimeMs = state.stintStartTime + currentStintPlannedDurationMs;
                   } else if ((hasOfficialStartTime || state.config?.stintSequence.some(s => s.plannedDurationMinutes)) && state.config) { 
+                      // Race not active, but has official start OR specific stint durations: calculate from official start
                       nextStintBaseTimeMs = officialStartTimestamp || currentTimeForCalcs; 
+                      // If no official start, but has durations, base it off "now" for planning purposes
                       if (!hasOfficialStartTime) { 
                           nextStintBaseTimeMs = currentTimeForCalcs;
                       } else { 
+                        // If official start, sum durations of all *completed or current* stints
                         for (let k = 0; k <= state.currentStintIndex; k++) { 
                             if (k < state.config.stintSequence.length) {
+                                // For the very first stint (k=0), if it's also the current one (state.currentStintIndex=0)
+                                // its duration must be added to officialStartTimestamp to get *its* end time, which is the start of the *next* one.
                                 if (k === 0 && k === state.currentStintIndex) { 
-                                     nextStintBaseTimeMs = officialStartTimestamp!;
+                                     nextStintBaseTimeMs = officialStartTimestamp!; // Start with official time
                                      const firstStintDurationMs = (state.config.stintSequence[0]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                                     nextStintBaseTimeMs += firstStintDurationMs; 
-                                } else if (k < state.currentStintIndex) {
+                                     nextStintBaseTimeMs += firstStintDurationMs; // Add its duration to get to the start of the next
+                                } else if (k < state.currentStintIndex) { // For already completed stints
                                     const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
+                                     // if first completed, add to official start, otherwise to cumulative
                                      if (k===0) nextStintBaseTimeMs = officialStartTimestamp! + stintDurationMs; else nextStintBaseTimeMs += stintDurationMs;
-                                } else if (k === state.currentStintIndex) { 
+                                } else if (k === state.currentStintIndex) { // For the current stint (if not the first one)
                                      const stintDurationMs = (state.config.stintSequence[k]?.plannedDurationMinutes || state.config.fuelDurationMinutes) * 60000;
-                                     if (k===0 && officialStartTimestamp) nextStintBaseTimeMs = officialStartTimestamp + stintDurationMs;
-                                     else if (k>0) nextStintBaseTimeMs += stintDurationMs;
+                                     if (k===0 && officialStartTimestamp) nextStintBaseTimeMs = officialStartTimestamp + stintDurationMs; // Should be handled by k=0 case
+                                     else if (k>0) nextStintBaseTimeMs += stintDurationMs; // Add its duration to cumulative
                                 }
                             }
                         }
                       }
                   } else {
-                      nextStintBaseTimeMs = 0; 
+                      // No official start time and no specific durations set for initial stints
+                      nextStintBaseTimeMs = 0; // Cannot calculate ETAs
                   }
 
                   let cumulativeDurationForUpcomingMs = 0;
 
                   if (state.config) {
+                      // Iterate from the stint AFTER the current one
                       for (let i = state.currentStintIndex + 1; i < state.config.stintSequence.length; i++) {
                         const stintEntry = state.config.stintSequence[i];
                         const driver = state.config.drivers.find(d => d.id === stintEntry.driverId);
@@ -547,9 +564,10 @@ export function RaceInterface() {
                         let isPotentiallyTooLate = false;
                         let remainingRaceTimeAtSwapText: string | null = null;
 
-                        if (nextStintBaseTimeMs !== 0) { 
+                        if (nextStintBaseTimeMs !== 0) { // If we have a base time to calculate from
+                            // This stint's ETA is the base time for the *first upcoming stint* + cumulative durations of *intermediate upcoming stints*
                             thisStintExpectedStartTimeMs = nextStintBaseTimeMs + cumulativeDurationForUpcomingMs;
-                            cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000;
+                            cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000; // Add this stint's duration for the *next* iteration
 
                             if (state.raceFinishTime && thisStintExpectedStartTimeMs >= state.raceFinishTime) {
                                 isPotentiallyTooLate = true;
@@ -568,8 +586,8 @@ export function RaceInterface() {
                               </p>
                               {thisStintExpectedStartTimeMs !== null && nextStintBaseTimeMs !== 0 ? (
                                 <>
-                                  <p className={cn("text-xs font-semibold", isPotentiallyTooLate ? "text-destructive" : "text-primary")}>
-                                    {isPotentiallyTooLate && <AlertTriangle className="inline-block h-3 w-3 mr-1 align-text-bottom" />}
+                                  <p className={cn("text-xs font-semibold", isPotentiallyTooLate ? "text-accent" : "text-primary")}>
+                                    {isPotentiallyTooLate && <AlertTriangle className="inline-block h-3 w-3 mr-1 align-text-bottom text-accent" />}
                                     ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
                                       ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
@@ -580,6 +598,7 @@ export function RaceInterface() {
                                   )}
                                 </>
                               ) : (
+                                  // Fallback if ETA cannot be calculated
                                   <p className="text-xs text-muted-foreground">
                                     Planned Duration: {stintPlannedDurationMinutes} min
                                   </p>
@@ -692,9 +711,11 @@ export function RaceInterface() {
           size="lg"
           className={cn(
                 "w-full",
+                // If race is active OR completed, AND it's not the case that race is inactive AND not completed, then span full width
+                // This simplifies to: if (race is active or completed), span full. Otherwise, it's one of two buttons.
                 (state.isRaceActive || state.raceCompleted) && !(!state.isRaceActive && !state.raceCompleted) && "sm:col-span-2"
             )}
-          disabled={raceNotYetStartedAndHasFutureStartTime && !state.isRaceActive && !state.isRacePaused}
+          disabled={raceNotYetStartedAndHasFutureStartTime && !state.isRaceActive && !state.isRacePaused} // Disable reset if countdown active and race not started/paused
         >
           <RotateCcw className="mr-2 h-5 w-5" /> Reset Race Data
         </Button>
@@ -724,3 +745,4 @@ export function RaceInterface() {
     </div>
   );
 }
+
