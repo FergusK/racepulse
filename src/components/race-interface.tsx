@@ -138,7 +138,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
     case 'LOAD_CONFIG': {
       const newConfig = action.payload;
       
-      // Preserve runtime state
+      // Preserve runtime state by applying new config selectively
       let preservedState = {
         ...state,
         config: newConfig, // Apply the new configuration
@@ -417,7 +417,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
               const actualFuelTankDurationMinutesForTick = config.fuelDurationMinutes;
               let effectiveCurrentTimeForFuelTick = currentTime; 
 
-              if (newState.practiceCompleted && !newState.isRaceActive && newState.practiceFinishTime) {
+              if (newState.practiceCompleted && !newState.isRaceActive && newState.practiceFinishTime && newState.fuelTankStartTime) {
                   effectiveCurrentTimeForFuelTick = newState.practiceFinishTime;
               }
               
@@ -794,20 +794,28 @@ export function RaceInterface() {
   let fuelPercentage = 100;
 
   if (state.practiceCompleted && !state.isRaceActive && state.fuelTankStartTime && state.practiceFinishTime) {
+    // If practice just completed, use its finish time for fuel calculation.
     const fuelElapsedTimeAtPracticeEnd = state.practiceFinishTime - state.fuelTankStartTime;
     fuelTimeRemainingMs = Math.max(0, (actualFuelTankDurationMinutes * 60 * 1000) - fuelElapsedTimeAtPracticeEnd);
     fuelPercentage = Math.max(0, (fuelTimeRemainingMs / (actualFuelTankDurationMinutes * 60 * 1000)) * 100);
   } else if (state.fuelTankStartTime) { 
+    // General case for active race/practice or paused states
     let effectiveCurrentTimeForFuelCalc = currentTimeForCalcs; 
 
     if (state.isPracticeActive && state.isPracticePaused && state.practicePauseTime) {
         effectiveCurrentTimeForFuelCalc = state.practicePauseTime;
+    } else if (state.isRaceActive && state.isRacePaused && state.pauseTime) {
+        effectiveCurrentTimeForFuelCalc = state.pauseTime;
     }
+    // If practice completed and race not started, effectiveCurrentTimeForFuelCalc should already be state.practiceFinishTime from above.
+    // If simply practice active and running, effectiveCurrentTimeForFuelCalc is currentTimeForCalcs ('now')
+    // If race active and running, effectiveCurrentTimeForFuelCalc is currentTimeForCalcs ('now')
     
     const currentFuelElapsedTimeMs = effectiveCurrentTimeForFuelCalc - state.fuelTankStartTime;
     fuelTimeRemainingMs = Math.max(0, (actualFuelTankDurationMinutes * 60 * 1000) - currentFuelElapsedTimeMs);
     fuelPercentage = Math.max(0, (fuelTimeRemainingMs / (actualFuelTankDurationMinutes * 60 * 1000)) * 100);
   } else if (!state.fuelTankStartTime && !raceNotYetStartedAndHasFutureStartTime) {
+     // Before anything has started (practice or race), and no future official start
      fuelTimeRemainingMs = actualFuelTankDurationMinutes * 60 * 1000;
      fuelPercentage = 100;
   }
@@ -1023,7 +1031,7 @@ export function RaceInterface() {
          <Alert variant="default" className="mb-6 border-primary bg-primary/10">
           <Flag className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Race Finished!</AlertTitle>
-          <AlertDescription>
+          <AlertDescription className="text-foreground">
             The race has concluded. Total elapsed time: {formatTime(raceElapsedTimeMs)}.
           </AlertDescription>
         </Alert>
@@ -1099,7 +1107,7 @@ export function RaceInterface() {
           <RotateCcw className="mr-2 h-5 w-5" /> Reset Race Data
           </Button>
       </div>
-
+      
       {canDisplayUpcomingStintsList && !state.isPracticeActive && (
         <Card className="shadow-lg mt-8 mb-6">
           <CardHeader>
@@ -1161,6 +1169,18 @@ export function RaceInterface() {
                   }
 
                   let cumulativeDurationForUpcomingMs = 0;
+                  let maxDurationToDisplay = 1;
+                  if (state.config && state.config.stintSequence.length > 0) {
+                    maxDurationToDisplay = Math.max(
+                      1,
+                      ...state.config.stintSequence.map(
+                        (stint) => stint.plannedDurationMinutes || state.config.fuelDurationMinutes
+                      )
+                    );
+                  } else if (state.config) {
+                    maxDurationToDisplay = Math.max(1, state.config.fuelDurationMinutes);
+                  }
+
 
                   if (state.config) {
                       const startIndexForUpcoming = (state.isRaceActive || state.isRacePaused || (state.isPracticeActive && !state.practiceCompleted) || (state.isPracticePaused && !state.practiceCompleted) ) ? state.currentStintIndex + 1 : 0;
@@ -1168,7 +1188,7 @@ export function RaceInterface() {
                       for (let i = startIndexForUpcoming; i < state.config.stintSequence.length; i++) {
                         const stintEntry = state.config.stintSequence[i];
                         const driver = state.config.drivers.find(d => d.id === stintEntry.driverId);
-                        const stintPlannedDurationMinutes = stintEntry.plannedDurationMinutes || state.config.fuelDurationMinutes;
+                        const currentStintEffectiveDuration = stintEntry.plannedDurationMinutes || state.config.fuelDurationMinutes;
 
                         let thisStintExpectedStartTimeMs: number | null = null;
                         let isPotentiallyTooLate = false;
@@ -1187,23 +1207,58 @@ export function RaceInterface() {
                                 const remainingMs = state.raceFinishTime - thisStintExpectedStartTimeMs;
                                 remainingRaceTimeAtSwapText = `Race time left: ${formatTime(remainingMs)}`;
                             }
-                            cumulativeDurationForUpcomingMs += stintPlannedDurationMinutes * 60000;
+                            cumulativeDurationForUpcomingMs += currentStintEffectiveDuration * 60000;
                         }
                        
                         upcomingStintsToRender.push(
                           <div 
                             key={`${stintEntry.driverId}-${i}-${stintEntry.plannedDurationMinutes}`} 
-                            className="p-4 rounded-lg border bg-card shadow-md text-sm"
+                            className="flex items-start space-x-4 p-4 rounded-lg border bg-card shadow-md text-sm"
                           >
-                            <div className="flex justify-between items-start mb-2">
-                                <div>
+                            {/* Visual Bar */}
+                            <div className="flex-shrink-0 pt-1">
+                              <div 
+                                className="h-24 w-5 bg-muted rounded relative" 
+                                title={`${currentStintEffectiveDuration} min planned`}
+                              >
+                                <div 
+                                  className="absolute bottom-0 left-0 right-0 bg-primary transition-all duration-300 ease-in-out rounded" 
+                                  style={{ height: `${Math.max(0, Math.min(100, (currentStintEffectiveDuration / maxDurationToDisplay) * 100))}%` }}
+                                ></div>
+                              </div>
+                            </div>
+
+                            {/* Stint Details & Actions container */}
+                            <div className="flex-grow flex justify-between items-start min-w-0">
+                                {/* Stint Info (Driver, Duration, ETA) */}
+                                <div className="min-w-0 mr-2">
                                     <p className="text-lg font-semibold text-primary truncate">{driver?.name || "N/A"}</p>
                                     <p className="text-xs text-muted-foreground">
-                                        Stint #{i + 1} ({stintPlannedDurationMinutes} min)
+                                        Stint #{i + 1} ({currentStintEffectiveDuration} min)
                                     </p>
+                                    {thisStintExpectedStartTimeMs !== null && nextStintBaseTimeMs !== 0 ? (
+                                    <div className="space-y-1 mt-1">
+                                        <p className={cn("text-xs font-semibold", isPotentiallyTooLate ? "text-accent" : "text-primary")}>
+                                        {isPotentiallyTooLate && <AlertTriangle className="inline-block h-3 w-3 mr-1 align-text-bottom text-accent" />}
+                                        ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
+                                            ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
+                                        {isPotentiallyTooLate && " (After race finish)"}
+                                        </p>
+                                        {remainingRaceTimeAtSwapText && !isPotentiallyTooLate && (
+                                        <p className="text-xs text-muted-foreground">{remainingRaceTimeAtSwapText}</p>
+                                        )}
+                                    </div>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                        Planned Duration: {currentStintEffectiveDuration} min
+                                        {((state.isRacePaused && state.isRaceActive) || (state.isPracticePaused && state.isPracticeActive && !state.practiceCompleted)) && !hasOfficialStartTime && " (ETA calculation paused)"}
+                                        </p>
+                                    )}
                                 </div>
+                                {/* Action Buttons (Edit, Delete, Move) */}
                                 {!state.raceCompleted && (
-                                <div className="flex items-center space-x-1">
+                                <div className="flex flex-shrink-0 items-center space-x-1">
                                   <div className="flex flex-col">
                                      <Button
                                         variant="ghost"
@@ -1249,25 +1304,6 @@ export function RaceInterface() {
                                 </div>
                                 )}
                             </div>
-                            {thisStintExpectedStartTimeMs !== null && nextStintBaseTimeMs !== 0 ? (
-                            <div className="space-y-1">
-                                <p className={cn("text-xs font-semibold", isPotentiallyTooLate ? "text-accent" : "text-primary")}>
-                                {isPotentiallyTooLate && <AlertTriangle className="inline-block h-3 w-3 mr-1 align-text-bottom text-accent" />}
-                                ETA: {new Date(thisStintExpectedStartTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                {new Date(thisStintExpectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString() &&
-                                    ` (${new Date(thisStintExpectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`}
-                                {isPotentiallyTooLate && " (After race finish)"}
-                                </p>
-                                {remainingRaceTimeAtSwapText && !isPotentiallyTooLate && (
-                                <p className="text-xs text-muted-foreground">{remainingRaceTimeAtSwapText}</p>
-                                )}
-                            </div>
-                            ) : (
-                                <p className="text-xs text-muted-foreground">
-                                Planned Duration: {stintPlannedDurationMinutes} min
-                                {((state.isRacePaused && state.isRaceActive) || (state.isPracticePaused && state.isPracticeActive && !state.practiceCompleted)) && !hasOfficialStartTime && " (ETA calculation paused)"}
-                                </p>
-                            )}
                           </div>
                         );
                       }
@@ -1325,3 +1361,4 @@ export function RaceInterface() {
     </div>
   );
 }
+
