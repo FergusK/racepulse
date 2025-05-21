@@ -1510,7 +1510,25 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                      
                     let expectedStartTimeMs = nextStintBaseTimeMs + cumulativeTimeOffsetMs;
                     let expectedEndTimeMs = expectedStartTimeMs + currentStintPlannedDurationMs;
-                    
+                    let effectiveStintDurationForBarMs = currentStintPlannedDurationMs;
+
+                    // During race, adjust times based on race start and accumulated pause
+                    if (state.isRaceActive && state.raceStartTime) {
+                        // For current and future stints, calculate from race start
+                        if (absoluteIndex >= state.currentStintIndex) {
+                            const elapsedAtCurrentStint = state.stintStartTime ? state.stintStartTime - state.raceStartTime + state.accumulatedPauseDuration : 0;
+                            expectedStartTimeMs = state.raceStartTime + elapsedAtCurrentStint + cumulativeTimeOffsetMs;
+                            expectedEndTimeMs = expectedStartTimeMs + currentStintPlannedDurationMs;
+
+                            // If this stint would end after race finish, adjust it to end at race finish
+                            if (state.raceFinishTime && expectedEndTimeMs > state.raceFinishTime) {
+                                expectedEndTimeMs = state.raceFinishTime;
+                                // Update the effective duration for display
+                                effectiveStintDurationForBarMs = expectedEndTimeMs - expectedStartTimeMs;
+                            }
+                        }
+                    }
+
                     let raceTimeRemainingAtStintStartText: string | null = null;
                     let timeToStintStartMs: number | null = null;
                     let timeToStintEndMs: number | null = null;
@@ -1520,34 +1538,39 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                     const isPotentiallyTooLate = state.raceFinishTime && expectedStartTimeMs + currentStintPlannedDurationMs > state.raceFinishTime && expectedStartTimeMs < state.raceFinishTime;
                     const isCompletelyAfterFinish = state.raceFinishTime && expectedStartTimeMs >= state.raceFinishTime;
 
+                    // Update expectedEndTimeMs to match race finish if stint would end after race finish
+                    if (isPotentiallyTooLate && state.raceFinishTime) {
+                        expectedEndTimeMs = state.raceFinishTime;
+                        effectiveStintDurationForBarMs = expectedEndTimeMs - expectedStartTimeMs;
+                    }
 
                     if (state.raceFinishTime && expectedStartTimeMs < state.raceFinishTime) {
-                       if (state.raceStartTime) {
-                         // Calculate elapsed race time at checkup point
-                         const elapsedAtStart = expectedStartTimeMs - state.raceStartTime + state.accumulatedPauseDuration;
-                         // Calculate remaining race time
-                         const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtStart);
-                         raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(remainingTime)}`;
-                       } else {
-                         raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(Math.max(0, state.raceFinishTime - expectedStartTimeMs))}`;
-                       }
+                        if (state.raceStartTime) {
+                            // Calculate elapsed race time at checkup point
+                            const elapsedAtStart = expectedStartTimeMs - state.raceStartTime + state.accumulatedPauseDuration;
+                            // Calculate remaining race time
+                            const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtStart);
+                            raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(remainingTime)}`;
+                        } else {
+                            raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(Math.max(0, state.raceFinishTime - expectedStartTimeMs))}`;
+                        }
                     } else if (state.raceFinishTime && expectedStartTimeMs >= state.raceFinishTime) {
-                       raceTimeRemainingAtStintStartText = "Starts after race finish";
+                        raceTimeRemainingAtStintStartText = "Starts after race finish";
                     }
 
                     let raceTimeAtEndText: string | null = null;
                     if (state.raceFinishTime && expectedEndTimeMs < state.raceFinishTime) {
-                       if (state.raceStartTime) {
-                         // Calculate elapsed race time at end point
-                         const elapsedAtEnd = expectedEndTimeMs - state.raceStartTime + state.accumulatedPauseDuration;
-                         // Calculate remaining race time
-                         const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtEnd);
-                         raceTimeAtEndText = `Race Time at End: ${formatTime(remainingTime)}`;
-                       } else {
-                         raceTimeAtEndText = `Race Time at End: ${formatTime(Math.max(0, state.raceFinishTime - expectedEndTimeMs))}`;
-                       }
+                        if (state.raceStartTime) {
+                            // Calculate elapsed race time at end point
+                            const elapsedAtEnd = expectedEndTimeMs - state.raceStartTime + state.accumulatedPauseDuration;
+                            // Calculate remaining race time
+                            const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtEnd);
+                            raceTimeAtEndText = `Race Time at End: ${formatTime(remainingTime)}`;
+                        } else {
+                            raceTimeAtEndText = `Race Time at End: ${formatTime(Math.max(0, state.raceFinishTime - expectedEndTimeMs))}`;
+                        }
                     } else if (state.raceFinishTime && expectedEndTimeMs >= state.raceFinishTime) {
-                       raceTimeAtEndText = "Ends after race finish";
+                        raceTimeAtEndText = "Ends after race finish";
                     }
 
                     let etaText: string | null = null;
@@ -1558,15 +1581,15 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                         if (new Date(expectedStartTimeMs).toLocaleDateString() !== new Date(currentTimeForCalcs).toLocaleDateString()) {
                             etaText += ` (${new Date(expectedStartTimeMs).toLocaleDateString([], {month: 'short', day: 'numeric'})})`;
                         }
-                         if (isCompletelyAfterFinish) {
+                        if (isCompletelyAfterFinish) {
                             etaText += " (After race finish)";
                         }
                         
                         etaEndText = `ETA End: ${new Date(expectedEndTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
                         if (isPotentiallyTooLate && !isCompletelyAfterFinish) {
-                           etaEndText += ` (${formatTime(expectedEndTimeMs - state.raceFinishTime!)} past finish)`;
+                            etaEndText += ` (${formatTime(expectedEndTimeMs - state.raceFinishTime!)} past finish)`;
                         }
-                         if (isCompletelyAfterFinish) {
+                        if (isCompletelyAfterFinish) {
                             etaEndText = "Ends after race finish";
                         }
 
@@ -1574,9 +1597,9 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                             timeToStintStartMs = expectedStartTimeMs - currentTimeForCalcs;
                         }
                         if (expectedEndTimeMs > currentTimeForCalcs && !state.isRacePaused && !state.isPracticePaused) {
-                             if(expectedStartTimeMs <= currentTimeForCalcs) { // Only show if stint has started or is current
+                            if(expectedStartTimeMs <= currentTimeForCalcs) { // Only show if stint has started or is current
                                 timeToStintEndMs = expectedEndTimeMs - currentTimeForCalcs;
-                             }
+                            }
                         }
                     }
                     
@@ -1596,18 +1619,9 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                     }
                     barStartOffsetFromRaceOriginMs = Math.max(0, barStartOffsetFromRaceOriginMs);
 
-                    let effectiveStintDurationForBarMs = currentStintPlannedDurationMs;
-                    if (state.raceFinishTime) {
-                        if (expectedStartTimeMs >= state.raceFinishTime) {
-                            effectiveStintDurationForBarMs = 0;
-                        } else if (expectedEndTimeMs > state.raceFinishTime) {
-                            effectiveStintDurationForBarMs = Math.max(0, state.raceFinishTime - expectedStartTimeMs);
-                        }
-                    }
-                    
-                    const stintStartPercent = timelineBarTotalDurationMs > 0 ? (barStartOffsetFromRaceOriginMs / timelineBarTotalDurationMs) * 100 : 0;
                     let stintWidthPercent = timelineBarTotalDurationMs > 0 ? (effectiveStintDurationForBarMs / timelineBarTotalDurationMs) * 100 : 0;
 
+                    const stintStartPercent = timelineBarTotalDurationMs > 0 ? (barStartOffsetFromRaceOriginMs / timelineBarTotalDurationMs) * 100 : 0;
                     const actualStintStartPercent = Math.max(0, stintStartPercent);
                     if (actualStintStartPercent >= 100) {
                         stintWidthPercent = 0; 
@@ -1619,8 +1633,10 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                     if (isCurrentActiveStint) {
                         segmentColorClass = 'bg-primary/70'; 
                     }
-                    if (isCompletelyAfterFinish || (isPotentiallyTooLate && effectiveStintDurationForBarMs > 0) ) {
+                    if (isCompletelyAfterFinish) {
                         segmentColorClass = 'bg-accent'; 
+                    } else if (isPotentiallyTooLate && effectiveStintDurationForBarMs > 0) {
+                        segmentColorClass = 'bg-accent/70'; 
                     }
                     
                     const barTitle = `Planned: ${formatTime(barStartOffsetFromRaceOriginMs)} - ${formatTime(barStartOffsetFromRaceOriginMs + effectiveStintDurationForBarMs)} (Rel. to Race Plan Start)`;
@@ -1753,7 +1769,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                                         title={barTitle}
                                     />
                                     )}
-                                    {isCurrentActiveStint && state.stintStartTime && timelineBarTotalDurationMs > 0 && stintElapsedTimeMs > 0 && stintElapsedTimeMs < effectiveStintDurationForBarMs && (
+                                    {isCurrentActiveStint && state.stintStartTime && timelineBarTotalDurationMs > 0 && stintElapsedTimeMs > 0 && (
                                        <div 
                                           className="absolute top-0 bottom-0 w-0.5 bg-destructive/70"
                                           style={{ left: `${actualStintStartPercent + (stintElapsedTimeMs / timelineBarTotalDurationMs) * 100}%`}}
