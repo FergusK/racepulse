@@ -279,8 +279,10 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
     case 'START_RACE':
       if (!config || state.isPracticeActive) return state; 
       const raceActualStartTime = currentTime;
-      const referenceStartTimeForDuration = config.raceOfficialStartTime && Date.parse(config.raceOfficialStartTime) <= raceActualStartTime
-                                            ? Date.parse(config.raceOfficialStartTime)
+      const officialStartTime = config.raceOfficialStartTime ? Date.parse(config.raceOfficialStartTime) : null;
+      // Only use official start time if we're starting before or at the official start time
+      const referenceStartTimeForDuration = officialStartTime && raceActualStartTime <= officialStartTime
+                                            ? officialStartTime
                                             : raceActualStartTime;
       const raceFinishTime = referenceStartTimeForDuration + config.raceDurationMinutes * 60 * 1000;
       
@@ -302,7 +304,7 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
         ...state,
         isRaceActive: true,
         isRacePaused: false,
-        raceStartTime: raceActualStartTime,
+        raceStartTime: referenceStartTimeForDuration,
         pauseTime: null,
         accumulatedPauseDuration: 0,
         currentStintIndex: 0, 
@@ -544,11 +546,22 @@ function raceReducer(state: CurrentRaceState, action: RaceAction): CurrentRaceSt
     case 'UPDATE_STINT_START_TIME': {
       if (!state.config) return state;
       const { newStartTime, timeDiff } = action.payload;
-      return {
+      let newState = {
         ...state,
         stintStartTime: newStartTime,
         fuelTankStartTime: state.fuelTankStartTime ? state.fuelTankStartTime + timeDiff : null,
       };
+
+      // If this is the first stint, update race start time and finish time
+      if (state.currentStintIndex === 0 && state.raceStartTime && state.raceFinishTime) {
+        newState = {
+          ...newState,
+          raceStartTime: state.raceStartTime + timeDiff,
+          raceFinishTime: state.raceFinishTime + timeDiff,
+        };
+      }
+
+      return newState;
     }
 
     case 'SET_RACE_START_TIME': {
@@ -694,23 +707,6 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
   
   useEffect(() => {
     const officialStartTimestampFromConfig = state.config?.raceOfficialStartTime ? Date.parse(state.config.raceOfficialStartTime) : null;
-    let autoStartTimerId: NodeJS.Timeout | null = null;
-
-    if (officialStartTimestampFromConfig && officialStartTimestampFromConfig > Date.now() && !state.isRaceActive && !state.raceCompleted && state.config &&
-        !state.isPracticeActive && (state.practiceCompleted || !state.config?.practiceDurationMinutes) ) {
-      const timeToAutoStart = officialStartTimestampFromConfig - Date.now();
-      const currentConfigStartTime = state.config.raceOfficialStartTime;
-
-      autoStartTimerId = setTimeout(() => {
-        if (state.config?.raceOfficialStartTime === currentConfigStartTime &&
-            Date.now() >= (officialStartTimestampFromConfig || 0) &&
-            !state.isRaceActive && !state.raceCompleted &&
-            !state.isPracticeActive && (state.practiceCompleted || !state.config?.practiceDurationMinutes)
-            ) {
-           dispatch({ type: 'START_RACE' });
-        }
-      }, timeToAutoStart);
-    }
 
     const tickIntervalId = setInterval(() => {
       const currentTickTime = Date.now();
@@ -726,7 +722,6 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
 
     return () => {
       clearInterval(tickIntervalId);
-      if (autoStartTimerId) clearInterval(autoStartTimerId);
     };
   }, [state.isRaceActive, state.isRacePaused, state.isPracticeActive, state.isPracticePaused, state.raceCompleted, state.practiceCompleted, state.fuelTankStartTime, state.config, state.practiceFinishTime, dispatch]);
 
@@ -772,7 +767,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
         fuelDurationMinutes: 0,
         practiceDurationMinutes: 0,
         raceOfficialStartTime: undefined,
-        driverCheckupMinutes: 0,
+        driverCheckupMinutes: 30,
         fuelWarningThresholdMinutes: 5
       };
       dispatch({ type: 'LOAD_CONFIG', payload: emptyConfig });
@@ -783,7 +778,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
         description: "All race data has been reset to default values.",
         variant: "destructive"
       });
-      onSetup(); // Navigate to setup page
+      handleNavigationAttempt(() => onSetup());
     }
   }
 
@@ -880,18 +875,6 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
         description: "The stint start time has been updated.",
       });
     }
-  };
-
-  const handlePitStopConfirm = (fuelTime: number) => {
-    if (state.isRaceActive) {
-      dispatch({ type: 'REFUEL_DURING_RACE', payload: { fuelTime } });
-    } else if (state.isPracticeActive) {
-      dispatch({ type: 'REFUEL_DURING_PRACTICE', payload: { fuelTime } });
-    }
-    toast({
-      title: "Refueled",
-      description: "Fuel tank has been refilled to 100%.",
-    });
   };
 
   const handleNavigationAttempt = (navigationCallback: () => void) => {
@@ -1029,7 +1012,10 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
 
   const raceTimeRemainingMs = state.raceFinishTime && (state.isRaceActive || state.isRacePaused)
     ? Math.max(0, state.raceFinishTime - currentTimeForCalcs)
-    : (state.raceCompleted ? 0 : config.raceDurationMinutes * 60 * 1000);
+    : (state.raceCompleted ? 0 : 
+        (hasOfficialStartTime && officialStartTimestamp && officialStartTimestamp > currentTimeForCalcs)
+          ? config.raceDurationMinutes * 60 * 1000
+          : (state.raceStartTime ? Math.max(0, state.raceFinishTime! - currentTimeForCalcs) : config.raceDurationMinutes * 60 * 1000));
   
   const practiceTimeRemainingMs = state.isPracticeActive && !state.isPracticePaused && state.practiceFinishTime
     ? Math.max(0, state.practiceFinishTime - currentTimeForCalcs)
@@ -1152,6 +1138,18 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
     return { startTime: expectedStartTime, endTime: expectedEndTime };
   };
 
+  const handlePitStopConfirm = (fuelTime: number) => {
+    if (state.isRaceActive) {
+      dispatch({ type: 'REFUEL_DURING_RACE', payload: { fuelTime } });
+    } else if (state.isPracticeActive) {
+      dispatch({ type: 'REFUEL_DURING_PRACTICE', payload: { fuelTime } });
+    }
+    toast({
+      title: "Refueled",
+      description: "Fuel tank has been refilled to 100%.",
+    });
+  };
+
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="flex justify-between items-center">
@@ -1250,7 +1248,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
             <div className="flex items-center gap-2">
               <span>Low fuel detected. Pit in</span>
               <span className="font-mono font-bold text-destructive-foreground bg-destructive/30 px-2 py-0.5 rounded">
-                {formatTimeRemaining(fuelTimeRemainingMs / 1000)}
+                {formatTimeRemaining(Math.floor(fuelTimeRemainingMs / 1000))}
               </span>
               <span>to avoid running out of fuel.</span>
             </div>
@@ -1524,14 +1522,30 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
 
 
                     if (state.raceFinishTime && expectedStartTimeMs < state.raceFinishTime) {
-                       raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(Math.max(0, state.raceFinishTime - expectedStartTimeMs))}`;
+                       if (state.raceStartTime) {
+                         // Calculate elapsed race time at checkup point
+                         const elapsedAtStart = expectedStartTimeMs - state.raceStartTime + state.accumulatedPauseDuration;
+                         // Calculate remaining race time
+                         const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtStart);
+                         raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(remainingTime)}`;
+                       } else {
+                         raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(Math.max(0, state.raceFinishTime - expectedStartTimeMs))}`;
+                       }
                     } else if (state.raceFinishTime && expectedStartTimeMs >= state.raceFinishTime) {
                        raceTimeRemainingAtStintStartText = "Starts after race finish";
                     }
 
                     let raceTimeAtEndText: string | null = null;
                     if (state.raceFinishTime && expectedEndTimeMs < state.raceFinishTime) {
-                       raceTimeAtEndText = `Race Time at End: ${formatTime(Math.max(0, state.raceFinishTime - expectedEndTimeMs))}`;
+                       if (state.raceStartTime) {
+                         // Calculate elapsed race time at end point
+                         const elapsedAtEnd = expectedEndTimeMs - state.raceStartTime + state.accumulatedPauseDuration;
+                         // Calculate remaining race time
+                         const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtEnd);
+                         raceTimeAtEndText = `Race Time at End: ${formatTime(remainingTime)}`;
+                       } else {
+                         raceTimeAtEndText = `Race Time at End: ${formatTime(Math.max(0, state.raceFinishTime - expectedEndTimeMs))}`;
+                       }
                     } else if (state.raceFinishTime && expectedEndTimeMs >= state.raceFinishTime) {
                        raceTimeAtEndText = "Ends after race finish";
                     }
@@ -1648,7 +1662,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                             )}
 
                             {/* Driver Checkup Times */}
-                            {((state.isRaceActive || state.isPracticeActive) && !state.isRacePaused && !state.isPracticePaused) && (
+                            {((state.isRaceActive || state.isPracticeActive || showPreRaceDriverInfo) && !state.raceCompleted && (config.driverCheckupMinutes ?? 0) > 0) && (
                               <div className="mt-2">
                                 <div className="flex items-center justify-between mb-1">
                                   <p className="text-xs text-muted-foreground">Checkup Times:</p>
@@ -1664,7 +1678,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                                 <div className="flex flex-wrap gap-2">
                                   {(() => {
                                     const checkupInterval = stintEntry.checkupMinutes || config.driverCheckupMinutes;
-                                    if (!checkupInterval) return <></>;
+                                    if (!checkupInterval || checkupInterval <= 0) return <></>;
                                     
                                     const checkupTimes: JSX.Element[] = [];
                                     let baseTime = expectedStartTimeMs;
@@ -1673,9 +1687,21 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                                     while (baseTime < stintEndTime) {
                                       const checkupTime = baseTime + (checkupInterval * 60000);
                                       if (checkupTime <= stintEndTime) {
-                                        const timeDisplay = showRaceTime && state.raceFinishTime
-                                          ? formatTime(Math.max(0, state.raceFinishTime - checkupTime))
-                                          : new Date(checkupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                        let timeDisplay: string;
+                                        if (showRaceTime && state.raceFinishTime) {
+                                          if (state.raceStartTime) {
+                                            // Calculate elapsed race time at checkup point
+                                            const elapsedAtCheckup = checkupTime - state.raceStartTime + state.accumulatedPauseDuration;
+                                            // Calculate remaining race time
+                                            const remainingTime = Math.max(0, state.raceFinishTime - state.raceStartTime - elapsedAtCheckup);
+                                            timeDisplay = formatTime(remainingTime);
+                                          } else {
+                                            // Race hasn't started yet, use official start time
+                                            timeDisplay = formatTime(Math.max(0, state.raceFinishTime - checkupTime));
+                                          }
+                                        } else {
+                                          timeDisplay = new Date(checkupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                        }
                                         
                                         checkupTimes.push(
                                           <div 
@@ -1819,7 +1845,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
             <div className="flex items-center gap-2">
               <span>Low fuel detected. Pit in</span>
               <span className="font-mono font-bold text-destructive-foreground bg-destructive/30 px-2 py-0.5 rounded">
-                {formatTimeRemaining(state.fuelWarningTimeRemaining || 0)}
+                {formatTimeRemaining(Math.floor(state.fuelWarningTimeRemaining || 0))}
               </span>
               <span>to avoid running out of fuel.</span>
             </div>
