@@ -757,6 +757,36 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
      toast({title: "Race Reset", description: "All race progress has been cleared."});
   }
 
+  const handleClearAllData = () => {
+    if (window.confirm("Are you sure you want to clear all data? This will reset everything to default values and cannot be undone.")) {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(RACE_STATE_LOCAL_STORAGE_KEY_FULL);
+        window.localStorage.removeItem(RACE_CONFIG_LOCAL_STORAGE_KEY);
+      }
+      // Create a truly empty config
+      const emptyConfig: RaceConfiguration = {
+        ...DEFAULT_RACE_CONFIG,
+        drivers: [],
+        stintSequence: [],
+        raceDurationMinutes: 0,
+        fuelDurationMinutes: 0,
+        practiceDurationMinutes: 0,
+        raceOfficialStartTime: undefined,
+        driverCheckupMinutes: 0,
+        fuelWarningThresholdMinutes: 5
+      };
+      dispatch({ type: 'LOAD_CONFIG', payload: emptyConfig });
+      dispatch({ type: 'RESET_RACE_LOGIC' });
+      setRaceConfigFromStorage(emptyConfig);
+      toast({
+        title: "All Data Cleared",
+        description: "All race data has been reset to default values.",
+        variant: "destructive"
+      });
+      onSetup(); // Navigate to setup page
+    }
+  }
+
   const handleSwapDriverConfirm = (nextDriverId: string, refuel: boolean, nextStintPlannedDuration?: number, fuelTime?: number) => {
     dispatch({ 
       type: 'SWAP_DRIVER', 
@@ -933,6 +963,55 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
   }
 
   const { config } = state;
+
+  // Show placeholder if no configuration is set up
+  if (!config.drivers.length || !config.stintSequence.length) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="flex justify-between items-center mb-8">
+          <Button
+            variant="outline"
+            onClick={() => handleNavigationAttempt(onBack)}
+            className="flex items-center"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Race List
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => handleNavigationAttempt(() => onSetup())}
+            className="flex items-center"
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Setup
+          </Button>
+        </div>
+
+        <Card className="max-w-2xl mx-auto text-center p-8">
+          <CardHeader>
+            <CardTitle className="text-2xl text-primary flex items-center justify-center">
+              <Settings className="mr-2 h-8 w-8" /> No Race Configuration
+            </CardTitle>
+            <UICardDescription className="text-lg mt-4">
+              Please set up your race configuration first.
+            </UICardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <p className="text-muted-foreground">
+              You need to configure drivers and stint sequence before starting a race.
+            </p>
+            <Button
+              onClick={() => handleNavigationAttempt(() => onSetup())}
+              size="lg"
+              className="w-full"
+            >
+              <Settings className="mr-2 h-5 w-5" /> Go to Setup
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   
   const hasOfficialStartTime = !!(config.raceOfficialStartTime && !isNaN(Date.parse(config.raceOfficialStartTime)));
   const officialStartTimestamp = hasOfficialStartTime ? Date.parse(config.raceOfficialStartTime!) : null;
@@ -1702,7 +1781,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
         />
       )}
 
-      <div className="mt-8 flex justify-center">
+      <div className="mt-8 flex justify-center gap-4">
         <Button
           onClick={handleResetRace}
           variant="destructive"
@@ -1714,6 +1793,14 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                   }
         >
           <RotateCcw className="mr-2 h-4 w-4" /> Reset Race Data
+        </Button>
+        <Button
+          onClick={handleClearAllData}
+          variant="destructive"
+          size="sm"
+          className="w-48 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+        >
+          <Trash2 className="mr-2 h-4 w-4" /> Clear All Data
         </Button>
       </div>
 
