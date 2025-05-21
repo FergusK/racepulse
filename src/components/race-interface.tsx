@@ -1524,11 +1524,17 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
 
 
                     if (state.raceFinishTime && expectedStartTimeMs < state.raceFinishTime) {
-                       raceTimeRemainingAtStintStartText = `Race Time Left at Start: ${formatTime(Math.max(0, state.raceFinishTime - expectedStartTimeMs))}`;
+                       raceTimeRemainingAtStintStartText = `Race Time at Start: ${formatTime(Math.max(0, state.raceFinishTime - expectedStartTimeMs))}`;
                     } else if (state.raceFinishTime && expectedStartTimeMs >= state.raceFinishTime) {
                        raceTimeRemainingAtStintStartText = "Starts after race finish";
                     }
 
+                    let raceTimeAtEndText: string | null = null;
+                    if (state.raceFinishTime && expectedEndTimeMs < state.raceFinishTime) {
+                       raceTimeAtEndText = `Race Time at End: ${formatTime(Math.max(0, state.raceFinishTime - expectedEndTimeMs))}`;
+                    } else if (state.raceFinishTime && expectedEndTimeMs >= state.raceFinishTime) {
+                       raceTimeAtEndText = "Ends after race finish";
+                    }
 
                     let etaText: string | null = null;
                     let etaEndText: string | null = null;
@@ -1626,6 +1632,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                             {etaText && <p className={cn("text-xs", isCompletelyAfterFinish && "text-accent-foreground", isPotentiallyTooLate && "text-accent-foreground")}>{etaText}</p>}
                             {etaEndText && <p className={cn("text-xs", (isPotentiallyTooLate || isCompletelyAfterFinish) && "text-accent-foreground")}>{etaEndText}</p>}
                             {raceTimeRemainingAtStintStartText && <p className={cn("text-xs", isCompletelyAfterFinish && "text-accent-foreground", isPotentiallyTooLate && "text-accent-foreground")}>{raceTimeRemainingAtStintStartText}</p>}
+                            {raceTimeAtEndText && <p className={cn("text-xs", (isPotentiallyTooLate || isCompletelyAfterFinish) && "text-accent-foreground")}>{raceTimeAtEndText}</p>}
 
                             {timeToStintStartMs !== null && timeToStintStartMs > 0 && (
                                 <p className="text-xs text-muted-foreground">
@@ -1691,11 +1698,11 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
                           </div>
                           {!state.raceCompleted && (
                             <div className="flex items-center space-x-1 shrink-0">
-                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenEditStintDialog(absoluteIndex, stintEntry.driverId, stintEntry.plannedDurationMinutes)} disabled={ state.raceCompleted || (state.isRaceActive && state.isRacePaused) || (state.isPracticeActive && !state.practiceCompleted) }><Pencil className="h-4 w-4" /></Button>
-                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDeleteStint(absoluteIndex)} disabled={ state.raceCompleted || (state.isRaceActive && state.isRacePaused) || (state.isPracticeActive && !state.practiceCompleted) || (isCurrentActiveStint) }><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenEditStintDialog(absoluteIndex, stintEntry.driverId, stintEntry.plannedDurationMinutes)} disabled={ state.raceCompleted || (state.isRaceActive && state.isRacePaused) }><Pencil className="h-4 w-4" /></Button>
+                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDeleteStint(absoluteIndex)} disabled={ state.raceCompleted || (state.isRaceActive && state.isRacePaused) || (isCurrentActiveStint) }><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                <div className="flex flex-col">
-                                <Button variant="ghost" size="icon" className="h-7 w-7 p-0 disabled:opacity-30" onClick={() => handleMoveStint(absoluteIndex, absoluteIndex - 1)} disabled={absoluteIndex === startIndexForUpcoming || absoluteIndex === 0 || state.raceCompleted || (state.isRaceActive && state.isRacePaused) || (state.isPracticeActive && !state.practiceCompleted)}><ArrowUp className="h-4 w-4" /></Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 p-0 disabled:opacity-30" onClick={() => handleMoveStint(absoluteIndex, absoluteIndex + 1)} disabled={absoluteIndex === config.stintSequence.length - 1 || state.raceCompleted || (state.isRaceActive && state.isRacePaused) || (state.isPracticeActive && !state.practiceCompleted)}><ArrowDown className="h-4 w-4" /></Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 p-0 disabled:opacity-30" onClick={() => handleMoveStint(absoluteIndex, absoluteIndex - 1)} disabled={absoluteIndex === startIndexForUpcoming || absoluteIndex === 0 || state.raceCompleted || (state.isRaceActive && state.isRacePaused)}><ArrowUp className="h-4 w-4" /></Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 p-0 disabled:opacity-30" onClick={() => handleMoveStint(absoluteIndex, absoluteIndex + 1)} disabled={absoluteIndex === config.stintSequence.length - 1 || state.raceCompleted || (state.isRaceActive && state.isRacePaused)}><ArrowDown className="h-4 w-4" /></Button>
                                </div>
                             </div>
                           )}
@@ -1812,7 +1819,7 @@ export function RaceInterface({ race, onBack, onSetup }: RaceInterfaceProps) {
             <div className="flex items-center gap-2">
               <span>Low fuel detected. Pit in</span>
               <span className="font-mono font-bold text-destructive-foreground bg-destructive/30 px-2 py-0.5 rounded">
-                {formatTimeRemaining(state.fuelWarningTimeRemaining)}
+                {formatTimeRemaining(state.fuelWarningTimeRemaining || 0)}
               </span>
               <span>to avoid running out of fuel.</span>
             </div>
