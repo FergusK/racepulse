@@ -9,12 +9,14 @@ export interface Driver {
 export interface StintEntry {
   driverId: string;
   plannedDurationMinutes?: number;
+  checkupMinutes?: number; // Optional checkup time override for this stint
 }
 
 export interface RaceConfiguration extends Omit<z.infer<typeof raceConfigSchema>, 'stintSequence' | 'raceOfficialStartTime' | 'practiceDurationMinutes'> {
   stintSequence: StintEntry[];
   raceOfficialStartTime?: string; // ISO string from datetime-local, optional
   practiceDurationMinutes?: number; // Optional practice session duration
+  driverCheckupMinutes?: number; // Default checkup time for all drivers
 }
 
 export type DriverSchema = z.infer<typeof driverSchema>;
@@ -34,31 +36,29 @@ export interface CurrentRaceState {
   config: RaceConfiguration | null;
   isRaceActive: boolean;
   isRacePaused: boolean;
-  raceStartTime: number | null; // timestamp
-  pauseTime: number | null; // timestamp when paused
-  accumulatedPauseDuration: number; // ms
-  
-  currentStintIndex: number;
-  currentDriverId: string | null;
-  
-  stintStartTime: number | null; // timestamp for current driver's stint
-  
-  fuelTankStartTime: number | null; // timestamp when current fuel tank started
-  fuelAlertActive: boolean;
-  fuelWarning: boolean;
-  fuelWarningTimeRemaining: number;
-
-  raceFinishTime: number | null; // timestamp when race should end based on start and duration
-  raceCompleted: boolean;
-  completedStints: CompletedStintEntry[];
-
-  // Practice Session State
   isPracticeActive: boolean;
+  isPracticePaused: boolean;
+  raceStartTime: number | null;
   practiceStartTime: number | null;
   practiceFinishTime: number | null;
-  practiceCompleted: boolean;
-  isPracticePaused: boolean;
+  pauseTime: number | null;
   practicePauseTime: number | null;
+  accumulatedPauseDuration: number;
+  currentStintIndex: number;
+  currentDriverId: string | null;
+  stintStartTime: number | null;
+  fuelTankStartTime: number | null;
+  fuelAlertActive: boolean;
+  raceFinishTime: number | null;
+  raceCompleted: boolean;
+  practiceCompleted: boolean;
+  completedStints: CompletedStintEntry[];
+  lastCheckupTime: number | null;
+  raceStatus: 'setup' | 'running' | 'paused' | 'completed';
+  elapsedMinutes: number;
+  stintSequence: StintEntry[];
+  fuelWarning: boolean;
+  fuelWarningTimeRemaining: number | null;
 }
 
 export interface Race {
@@ -77,30 +77,34 @@ export const DEFAULT_RACE_CONFIG: RaceConfiguration = {
   raceDurationMinutes: 120,
   raceOfficialStartTime: undefined,
   practiceDurationMinutes: undefined,
+  driverCheckupMinutes: 30, // Default 30 minutes between driver checkups
 };
 
-export const initialRaceState: Omit<CurrentRaceState, 'config'> = {
+export const INITIAL_RACE_STATE: Omit<CurrentRaceState, "config"> = {
   isRaceActive: false,
   isRacePaused: false,
+  isPracticeActive: false,
+  isPracticePaused: false,
   raceStartTime: null,
+  practiceStartTime: null,
+  practiceFinishTime: null,
   pauseTime: null,
+  practicePauseTime: null,
   accumulatedPauseDuration: 0,
   currentStintIndex: 0,
   currentDriverId: null,
   stintStartTime: null,
   fuelTankStartTime: null,
   fuelAlertActive: false,
-  fuelWarning: false,
-  fuelWarningTimeRemaining: 0,
   raceFinishTime: null,
   raceCompleted: false,
-  completedStints: [],
-  // Practice initial state
-  isPracticeActive: false,
-  practiceStartTime: null,
-  practiceFinishTime: null,
   practiceCompleted: false,
-  isPracticePaused: false,
-  practicePauseTime: null,
+  completedStints: [],
+  lastCheckupTime: null,
+  raceStatus: 'setup',
+  elapsedMinutes: 0,
+  stintSequence: [],
+  fuelWarning: false,
+  fuelWarningTimeRemaining: null,
 };
 

@@ -59,6 +59,10 @@ export function RaceSetupForm() {
     data.practiceDurationMinutes = data.practiceDurationMinutes === null || data.practiceDurationMinutes === undefined || isNaN(Number(data.practiceDurationMinutes))
         ? undefined
         : Number(data.practiceDurationMinutes);
+    // Ensure driverCheckupMinutes is number or undefined
+    data.driverCheckupMinutes = data.driverCheckupMinutes === null || data.driverCheckupMinutes === undefined || isNaN(Number(data.driverCheckupMinutes))
+        ? undefined
+        : Number(data.driverCheckupMinutes);
 
     setSavedConfig(data);
     toast({
@@ -210,9 +214,22 @@ export function RaceSetupForm() {
                     type="number"
                     {...form.register('raceDurationMinutes')}
                     min="1"
+                    required
                   />
                   {form.formState.errors.raceDurationMinutes && (
                     <p className="text-sm text-destructive">{form.formState.errors.raceDurationMinutes.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="raceOfficialStartTime">Official Race Start Time (optional)</Label>
+                  <Input
+                    id="raceOfficialStartTime"
+                    type="datetime-local"
+                    {...form.register('raceOfficialStartTime')}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave empty to start the race manually. If set, the race will automatically start at this time.</p>
+                  {form.formState.errors.raceOfficialStartTime && (
+                    <p className="text-sm text-destructive">{form.formState.errors.raceOfficialStartTime.message}</p>
                   )}
                 </div>
                 <div className="space-y-2">
@@ -250,6 +267,20 @@ export function RaceSetupForm() {
                   />
                   {form.formState.errors.practiceDurationMinutes && (
                     <p className="text-sm text-destructive">{form.formState.errors.practiceDurationMinutes.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="driverCheckupMinutes">Default Driver Checkup Interval (minutes, optional)</Label>
+                  <Input
+                    id="driverCheckupMinutes"
+                    type="number"
+                    {...form.register('driverCheckupMinutes')}
+                    min="1"
+                    placeholder="Leave empty to disable checkups"
+                  />
+                  <p className="text-xs text-muted-foreground">Default time between driver checkups. Can be overridden per stint.</p>
+                  {form.formState.errors.driverCheckupMinutes && (
+                    <p className="text-sm text-destructive">{form.formState.errors.driverCheckupMinutes.message}</p>
                   )}
                 </div>
               </div>

@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -20,10 +19,11 @@ import { Users, TimerIcon, Save } from "lucide-react";
 interface EditStintDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (driverId: string, plannedDurationMinutes?: number) => void;
+  onConfirm: (driverId: string, plannedDurationMinutes?: number, checkupMinutes?: number) => void;
   availableDrivers: Driver[];
   initialDriverId?: string;
   initialDuration?: number;
+  initialCheckupMinutes?: number;
   defaultDuration: number; // Global fuel duration as fallback for placeholder
   isAdding: boolean;
 }
@@ -35,11 +35,13 @@ export function EditStintDialog({
   availableDrivers,
   initialDriverId,
   initialDuration,
+  initialCheckupMinutes,
   defaultDuration,
   isAdding,
 }: EditStintDialogProps) {
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
-  const [stintDuration, setStintDuration] = useState<string>("");
+  const [duration, setDuration] = useState<string>("");
+  const [checkupMinutes, setCheckupMinutes] = useState<string>("");
 
   useEffect(() => {
     if (isOpen) {
@@ -50,16 +52,16 @@ export function EditStintDialog({
       } else {
         setSelectedDriverId(""); // Should not happen if dialog is opened correctly
       }
-      setStintDuration(initialDuration?.toString() || "");
+      setDuration(initialDuration?.toString() || defaultDuration.toString());
+      setCheckupMinutes(initialCheckupMinutes?.toString() || "");
     }
-  }, [isOpen, initialDriverId, initialDuration, availableDrivers]);
+  }, [isOpen, initialDriverId, initialDuration, initialCheckupMinutes, availableDrivers]);
 
   const handleConfirm = () => {
-    if (selectedDriverId || availableDrivers.length === 0) { // Allow confirm if no drivers exist for some edge case
-      const duration = stintDuration.trim() === "" ? undefined : parseInt(stintDuration, 10);
-      onConfirm(selectedDriverId, isNaN(duration!) ? undefined : duration);
-      onClose();
-    }
+    const durationNum = parseInt(duration);
+    const checkupNum = checkupMinutes ? parseInt(checkupMinutes) : undefined;
+    onConfirm(selectedDriverId, isNaN(durationNum) ? undefined : durationNum, checkupNum);
+    onClose();
   };
 
   const dialogTitle = isAdding ? "Add New Stint" : "Edit Stint Details";
@@ -112,11 +114,26 @@ export function EditStintDialog({
               id="stintPlannedDuration"
               type="number"
               min="1"
-              value={stintDuration}
-              onChange={(e) => setStintDuration(e.target.value)}
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
               placeholder={`Default (${defaultDuration} min)`}
             />
             <p className="text-xs text-muted-foreground">Leave blank to use default fuel duration.</p>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="checkupInterval" className="text-muted-foreground flex items-center">
+              Checkup Interval (mins, optional)
+            </Label>
+            <Input
+              id="checkupInterval"
+              type="number"
+              min="1"
+              value={checkupMinutes}
+              onChange={(e) => setCheckupMinutes(e.target.value)}
+              placeholder="Leave empty to use default"
+            />
+            <p className="text-xs text-muted-foreground">Leave blank to use default checkup interval.</p>
           </div>
         </div>
         <DialogFooter>
